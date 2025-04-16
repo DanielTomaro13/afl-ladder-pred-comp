@@ -9,7 +9,7 @@ library(xgboost)
 library(Matrix)
 library(elo)
 #####################################################
-results <- fetch_results_afltables(1897:2025)
+results <- fetch_results_afltables(1897:2024)
 colnames(results)
 restructure_afl_data <- function(afl_data) {
   afl_home <- data.frame(
@@ -72,7 +72,7 @@ results <- results %>%
       Season, "_R", Round, "_",
       pmin(Team, Opponent), "_vs_", pmax(Team, Opponent)
     )
-  ) %>% arrange(Round, game_id)
+  ) %>% arrange(Date, Season, Round, game_id)
 
 teams_elo <- unique(c(results$Team))
 
@@ -123,17 +123,17 @@ results <- results %>%
   mutate(Elo_Difference = ELO - Opp_ELO)
 #####################################################
 # Add form
-results <- results %>%
-  arrange(Team, Date) %>%
-  group_by(Team) %>%
-  mutate(
-    form_last_5 = coalesce(lag(slide_dbl(Result, ~mean(.x, na.rm = TRUE), .before = 4, .complete = TRUE)), 0)
-  ) %>%
-  ungroup()
+#results <- results %>%
+  #arrange(Team, Date) %>%
+  #group_by(Team) %>%
+  #mutate(
+    #form_last_5 = coalesce(lag(slide_dbl(Result, ~mean(.x, na.rm = TRUE), .before = 4, .complete = TRUE)), 0)
+  #) %>%
+  #ungroup()
 #####################################################
 # Logisitc Regression
 logit_model <- glm(
-  Result_Binary ~ Elo_Difference + Home + form_last_5, 
+  Result_Binary ~ Elo_Difference + Home, 
   family = binomial,
   data = results
 )
@@ -157,10 +157,12 @@ logit_accuracy_by_season <- results %>%
   arrange(desc(Season))
 
 logit_accuracy_by_season
+
+table(results$Result_Binary, results$Logit_Forecast)
 #####################################################
 # Linear Regression 
 
-spread_lm <- lm(Spread ~ Elo_Difference + Home + form_last_5, data = results)
+spread_lm <- lm(Spread ~ Elo_Difference + Home, data = results)
 
 summary(spread_lm)
 
@@ -186,7 +188,7 @@ season_accuracy_mae
 # Poisson Distribution
 
 poisson_model <- glm(
-  Points_For ~ Elo_Difference + Home + form_last_5,
+  Points_For ~ Elo_Difference + Home,
   family = poisson(link = "log"),
   data = results
 )
@@ -216,7 +218,7 @@ poisson_accuracy_by_season
 
 xgb_data <- results %>%
   filter(!is.na(Result_Binary)) %>%
-  select(Result_Binary, Elo_Difference, Home, form_last_5)
+  select(Result_Binary, Elo_Difference, Home)
 
 # Split into features (X) and target (y)
 X <- as.matrix(xgb_data %>% select(-Result_Binary))
@@ -239,7 +241,7 @@ xgb_model <- xgboost(
   verbose = 0
 )
 
-results$XGB_Win_Prob <- predict(xgb_model, as.matrix(results %>% select(Elo_Difference, Home, form_last_5)))
+results$XGB_Win_Prob <- predict(xgb_model, as.matrix(results %>% select(Elo_Difference, Home)))
 results$XGB_Forecast <- ifelse(results$XGB_Win_Prob > 0.5, 1, 0)
 results$XGB_Correct <- ifelse(results$XGB_Forecast == results$Result_Binary, 1, 0)
 
@@ -252,12 +254,14 @@ xgb_accuracy_by_season <- results %>%
   arrange(desc(Season))
 
 xgb_accuracy_by_season
+
+xgb.importance(model = xgb_model)
 #####################################################
 # Ladder
 
 # Actual Ladder
 ladder_actual <- results %>%
-  filter(Season == 2025) %>%
+  filter(Season == 2024) %>%
   group_by(Team) %>%
   summarise(
     Actual_Wins = sum(Result == 1),
@@ -269,7 +273,7 @@ ladder_actual <- results %>%
 
 # Logistic Regression
 ladder_logit <- results %>%
-  filter(Season == 2025) %>%
+  filter(Season == 2024) %>%
   group_by(Team) %>%
   summarise(
     Logit_Wins = sum(Logit_Forecast == 1, na.rm = TRUE),
@@ -281,7 +285,7 @@ ladder_logit <- results %>%
 
 # XGBoost
 ladder_xgb <- results %>%
-  filter(Season == 2025) %>%
+  filter(Season == 2024) %>%
   group_by(Team) %>%
   summarise(
     XGB_Wins = sum(XGB_Forecast == 1, na.rm = TRUE),
@@ -293,7 +297,7 @@ ladder_xgb <- results %>%
 
 # Poisson
 ladder_poisson <- results %>%
-  filter(Season == 2025) %>%
+  filter(Season == 2024) %>%
   group_by(Team) %>%
   summarise(
     Poisson_Wins = sum(Poisson_Pred_Result == 1, na.rm = TRUE),
@@ -311,7 +315,7 @@ ladder_poisson <- results %>%
 
 # Linear Margin
 ladder_linear <- results %>%
-  filter(Season == 2025) %>%
+  filter(Season == 2024) %>%
   group_by(Team) %>%
   summarise(
     Linear_Wins = sum(Margin_Pred_Result == 1, na.rm = TRUE),
@@ -344,4 +348,137 @@ rank_diff_summary <- ladder_comparison %>%
   )
 
 rank_diff_summary
+#####################################################
+# 2025 Future Predictions
+fixture_2025 <- fetch_fixture_footywire(2025)
+colnames(fixture_2025)
+
+fixture_home <- fixture_2025 %>%
+  mutate(
+    Date = as.Date(Date),
+    Season = 2025,
+    Game_Id = paste0(Date, "_", Home.Team, "_vs_", Away.Team),
+    Team = Home.Team,
+    Opponent = Away.Team,
+    Home = TRUE
+  ) %>%
+  select(Date, Season, Game_Id, Round, Team, Opponent, Venue, Home)
+
+fixture_away <- fixture_2025 %>%
+  mutate(
+    Date = as.Date(Date),
+    Season = 2025,
+    Game_Id = paste0(Date, "_", Home.Team, "_vs_", Away.Team),
+    Team = Away.Team,
+    Opponent = Home.Team,
+    Home = FALSE
+  ) %>%
+  select(Date, Season, Game_Id, Round, Team, Opponent, Venue, Home)
+
+fixture_long <- bind_rows(fixture_home, fixture_away) %>%
+  arrange(Date, Season, Round, Game_Id)
+
+fixture_2025 <- fixture_long %>% left_join(
+  teams_elo %>% select(Team, ELO), by = c('Team' = 'Team'))
+
+fixture_2025 <- fixture_2025 %>% left_join(
+  teams_elo %>% select(Team, ELO), by = c('Opponent' = 'Team'))
+
+names(fixture_2025) <- c("Date", "Season", "Game_Id", "Round", "Team", "Opponent", "Venue", "Home", "ELO", "Opp_ELO")
+
+fixture_2025 <- fixture_2025 %>%
+  mutate(Elo_Difference = ELO - Opp_ELO)
+#####################################################
+# Add placeholder form
+#fixture_2025 <- fixture_2025 %>%
+  #mutate(form_last_5 = 0)
+#####################################################
+# Logit
+fixture_2025 <- fixture_2025 %>%
+  mutate(
+    Logit_Prob = predict(logit_model, newdata = fixture_2025, type = "response"),
+    Logit_Forecast = ifelse(Logit_Prob > 0.5, 1, 0)
+  )
+#####################################################
+# Linear
+fixture_2025 <- fixture_2025 %>%
+  mutate(
+    Margin_Pred = predict(spread_lm, newdata = fixture_2025),
+    Margin_Pred_Result = ifelse(Margin_Pred > 0, 1, 0)
+  )
+#####################################################
+# Poisson
+fixture_2025 <- fixture_2025 %>%
+  mutate(Poisson_Pred_Points = predict(poisson_model, newdata = ., type = "response"))
+
+opponent_scores <- fixture_2025 %>%
+  select(Game_Id, Team, Opponent, Opponent_Pred_Points = Poisson_Pred_Points)
+
+fixture_2025 <- fixture_2025 %>%
+  left_join(opponent_scores, by = c("Game_Id", "Team" = "Opponent", "Opponent" = "Team")) %>%
+  mutate(
+    Poisson_Pred_Margin = Poisson_Pred_Points - Opponent_Pred_Points,
+    Poisson_Pred_Result = ifelse(Poisson_Pred_Margin > 0, 1, 0)
+  )
+#####################################################
+# XG
+fixture_2025 <- fixture_2025 %>%
+  mutate(
+    XGB_Win_Prob = predict(xgb_model, as.matrix(select(., Elo_Difference, Home))),
+    XGB_Forecast = ifelse(XGB_Win_Prob > 0.5, 1, 0)
+  )
+#####################################################
+ladder_2025_logit <- fixture_2025 %>%
+  filter(Home == TRUE) %>%
+  group_by(Team) %>%
+  summarise(
+    Logit_Wins = sum(Logit_Forecast, na.rm = TRUE),
+    Logit_Points = Logit_Wins * 4,
+    .groups = "drop"
+  ) %>%
+  arrange(desc(Logit_Points)) %>%
+  mutate(Rank_Logit = row_number())
+
+ladder_2025_linear <- fixture_2025 %>%
+  filter(Home == TRUE) %>%
+  group_by(Team) %>%
+  summarise(
+    Linear_Wins = sum(Margin_Pred_Result, na.rm = TRUE),
+    Linear_Points = Linear_Wins * 4,
+    .groups = "drop"
+  ) %>%
+  arrange(desc(Linear_Points)) %>%
+  mutate(Rank_Linear = row_number())
+
+ladder_2025_poisson <- fixture_2025 %>%
+  filter(Home == TRUE) %>%
+  group_by(Team) %>%
+  summarise(
+    Poisson_Wins = sum(Poisson_Pred_Result, na.rm = TRUE),
+    Poisson_Points = Poisson_Wins * 4,
+    Poisson_Points_For = sum(Poisson_Pred_Points, na.rm = TRUE),
+    Poisson_Points_Against = sum(Poisson_Pred_Points - Poisson_Pred_Margin, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    Poisson_Percentage = round((Poisson_Points_For / Poisson_Points_Against) * 100, 1)
+  ) %>%
+  arrange(desc(Poisson_Points), desc(Poisson_Percentage)) %>%
+  mutate(Rank_Poisson = row_number())
+
+ladder_2025_xgb <- fixture_2025 %>%
+  filter(Home == TRUE) %>%
+  group_by(Team) %>%
+  summarise(
+    XGB_Wins = sum(XGB_Forecast, na.rm = TRUE),
+    XGB_Points = XGB_Wins * 4,
+    .groups = "drop"
+  ) %>%
+  arrange(desc(XGB_Points)) %>%
+  mutate(Rank_XGB = row_number())
+
+ladder_2025 <- ladder_2025_logit %>%
+  left_join(ladder_2025_linear, by = "Team") %>%
+  left_join(ladder_2025_poisson, by = "Team") %>%
+  left_join(ladder_2025_xgb, by = "Team")
 #####################################################
