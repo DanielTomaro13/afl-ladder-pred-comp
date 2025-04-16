@@ -1,0 +1,215 @@
+HOW TOs
+
+Install and Load the Libraries
+These are packages that help us work with data and get AFL results.
+
+install.packages(c("tidyr", "dplyr", "ggplot2", "fitzRoy", "elo"))  # Run this once if you have never used these before
+library(tidyr)
+library(dplyr)      # Helps manipulate and clean data
+library(ggplot2)    # Helps you make charts (optional)
+library(fitzRoy)    # Special package for AFL data
+library(elo)        # Used for ELO rating calculations
+
+CREATING A VARIABLE
+
+if I want to store something in the environment I simply name it followed by <- and run the line
+
+hello <- 1 + 2
+
+This was save the number 3 named as hello
+If I print(hello) the number 3 will be outputted 
+
+Getting Data
+Here are some functions from FitzRoy to get data
+
+fetch_results_afl()
+fetch_results_afltables()
+fetch_results_footywire()
+
+fetch_betting_odds()
+
+fetch_player_stats_afl()
+fetch_player_stats_footywire()
+fetch_player_stats_afltables()
+
+
+What is %>%
+
+results_2025 <- results %>% filter(Season == 2025)
+
+So what the pipe does is makes code more readable. If you were to write this out fully or check the documentation it would say something like
+FILTER("your_data", "COLUMN" == "CONDITION") when we use the pipe we put our dataset before it, this way we do not have to specify which data we are using every time and we can write more efficient code and use
+multiple functions in one block e.g.
+
+results <- results %>% select(home,away,score) %>% filter(score == 100) %>% rename(Points = score)
+here i have selected 3 columns, filtered for when the score is 100 and renamed score to Points
+
+
+Using Tidyverse
+
+Filtering - keeping rows which match conditions
+
+results_2025 <- results %>% filter(Season == 2025)
+
+Mutate - Add new columns or update existing ones
+
+results <- results %>% mutate(
+  Elo_Difference = ELO - Opp_ELO,
+  Result_Binary = Result,
+  Winner = NA
+)
+
+
+Select - Choose which columns to keep
+
+results %>% select(Team, ELO, Result)
+
+Arrange - Sort rows
+
+ladder_comparison %>% arrange(desc(Points_Actual)) - desc means in descending order, if you want ascending order do not specify
+
+Group_by and Summarise - Group data and calculate summaries
+
+ladder_actual <- results_2025 %>%
+  group_by(Team) %>%
+  summarise(
+    Wins = sum(Result == 1),
+    Points_For = sum(Points_For)
+  )
+
+Here we are grouping by team and creates new summary columns for each team which are the amount of wins using Sum and how many points they scored
+
+Left_Join - combining two data frames
+
+ladder_comparison <- ladder_actual %>%
+  left_join(ladder_predicted, by = "Team")
+
+Combines both ladder_actual and ladder_comparision into one BY MATCHING teams so it will use team to join YOU MUST SPECIFY THIS OR IT WILL GET MESSY
+
+Bind_Rows - reshaping and cleaning data
+
+bind_rows(afl_home, afl_away)
+
+stacks the two dataframes on top of each other
+
+
+Using multiple functions
+results %>% 
+  filter(Season == 2025) %>%
+  mutate(Elo_Difference = ELO - Opp_ELO) %>%
+  group_by(Team) %>%
+  summarise(Wins = sum(Result == 1))
+
+Take results, filter for 2025, calculate Elo difference, group by team, and count wins.
+
+
+
+HOW TO MAKE SIMPLE PLOTS
+
+ggplot(your_data, aes(x = column_for_x_axis, y = column_for_y_axis)) 
+  labs(title = "YOUR TITLE",
+       x = "X title",
+       y = "Y title")
+
+
+
+
+
+CHECKING ACCURACY 
+
+win_rate <- sum(results$Elo_Forecast_Result, na.rm = TRUE) / 
+  sum(!is.na(results$Elo_Forecast_Result))
+win_rate * 100  # Print as a percentage
+
+my results column is called ELo_Forecast_Result and I am adding up all the correct ones divided by the total
+
+
+
+
+HOW TO BUILD A MODEL
+
+name_your_model <- glm(
+  Result ~ variable_1 + variable_2
+  family = binomial,
+  data = your_data
+)
+
+summary(name_your_model)
+
+GLM means logistic regression
+
+
+PREDICTING WITH YOUR MODEL
+
+your_data$name_your_predicting_column <- predict(name_your_model, type = "response")
+
+your_data <- your_data %>%
+  mutate(
+    GLM_Forecast = ifelse(name_your_predicting_column > 0.5, 1, 0),
+    GLM_Correct = ifelse(GLM_Forecast == result_column, 1, 0)
+  )
+
+glm_accuracy <- mean(your_data$GLM_Correct, na.rm = TRUE)
+glm_accuracy * 100
+
+SO it is important to understand what 0.5 is here - we are saying if the probability is over 0.5 then we will say that is a win for the team. You can play around with this value but usually
+0.5 will produce the best results
+
+ACCURACY MEASURE
+
+Area under the curve - basically shows how accurate your model is, the closer to 1 the better you want to be above 0.65 ideally
+
+library(pROC) - install if needed
+
+roc_obj <- roc(your_data$Result_Binary, your_data$your_probability_column)
+auc(roc_obj)
+
+plot(roc_obj, main = paste("AUC =", round(auc(roc_obj), 3))) - rounding it to 3 decimal points with round
+
+
+Confusion Matrix
+This is great - it will tell you how many True Positives, True Negatives, False Positives and False Negatives
+So in other words how many predicted = 1 and actual = 1
+how many pred = 0 and actual = 0
+how many pred = 1 and actual = 0
+how many pred = 0 and actual = 1
+
+table(Predicted = your_data$Predicted_Class, Actual = your_data$Result_Binary)
+your_data %>%
+  mutate(Result_Binary = factor(Result_Binary),
+         Predicted_Class = factor(Predicted_Class)) %>%
+  conf_mat(truth = Result_Binary, estimate = Predicted_Class)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,91 @@
+Issues You May Run Into:
+
+1.
+Functions are not working e.g. fetch_player_stats, select(), mutate() etc.
+
+Solution : 
+Make sure you have loaded in all necessary libraries. If you have never loaded in a library you will need to install it with the following code
+install.packages("insert package name into quotes") - run this 
+
+2.
+Fetching stats is taking a long time
+
+Solution:
+AFL.com.au has a very long load time to scrape data, no way to really speed this up other than running it one time and saving it as a variable then using a different variable name from then on
+Here is an example
+
+afl_results <- fetch_results_afl(2010:2025) - Here I load in all results from 2010 - 2025
+
+afl_games <- afl_results - Here I create a new version of the dataset with a different name so I can edit it/use it and not have to load it in every time I adjust it and make a mistake
+
+Footywire has some long load times too, if you just cannot be bothered waiting and still want to use quality data use AFLtables, it takes about 30 sec to load all results from 1897 - 2025
+
+3. 
+You cannot combine datasets
+
+Solution:
+If you are using multiple sources e.g. AFL.com.au has extra player stats other sources do not but you want to use AFLtables for your main results there are some issues you will run into when merging the two together
+Firstly the team names, IDs and any primary keys (columns which enforce uniqueness) will be different. I suggest creating your own ID e.g. 2010-R1-Syd-NM this way it is consistent throughout.
+Secondly there will be different amounts of rows and columns in datasets. You can use bind_rows()/rbind() from dplyr which will stack datasets by rows filling in missing columns with NA. If your data has the same amount
+of rows you can use bind_cols/cbind().
+
+4. 
+Functions from the template are not working
+
+Solution:
+In the ELO creation and ladder creation code I have named the columns Team and Result, Win_Prob_pred etc. R studio is case sensitive so if your column is team or Home.team it will not know which column you are referring to.
+Make sure your columns are consistent throughout your code and your use of capitals is also consistent. In heinsight I should've used all lowercase but I like how caps looks so deal with it.
+
+5. 
+You are getting NA's
+
+Solution:
+The data you extract from FitzRoy is ALMOST flawless. There is occasions where columns will be NA. This is natural and an essential part of data analysis. It is your job to constantly be tracking the cleanliness and accuracy 
+of your data after pretty much every single manipulation. An example of when the FitzRoy data will be NA will be for certain statistics e.g. Supercoach score was invented and implemented in 2009 so any player stats you extract prior
+to this date will contain NAs. There are a few things you can do to mitigate this problem but it is ultimately up to you.
+You should first check for NAs with na <- ColSums(is.na(your_data)) then you can:
+
+1. Remove all rows or columns which contain NAs - if the amount is small relative to the size of the data it SHOULD (not always) be appropriate to just remove the NAs you can do this with omit.na()
+2. Fill in the NAs with an average value - this is pretty much never going to be appropriate but to do it you can do this : 
+df <- df %>%
+  mutate(col = ifelse(is.na(col), mean(col, na.rm = TRUE), col))
+3. Find out why something is NA - most of the time with this dataset the NA will be due to user error. I was running into issues when using multiple sources and the reason I was getting NAs when calculating team averages
+was due to team names being different across sources. So if you constantly check and run your code line by line you can usually debug what is going on through visualisation 
+
+Lastly - get creative! If you want to use SC score for example then only use data from 2009 onwards, that is still a huge dataset or even better you can calculate/manipulate what you need to from a source which has
+older information then merge it over to your dataset. An example I did was AFL.com.au player stats only goes back to 2013 so instead of initalizing ELO from 2013 I used AFLtables from 1897-2012 to get the ELOs of the teams at the end
+of the 2012 season and used them as the initial ELOs for the 2013 season. 
+
+6.
+Your model does not seem right
+
+Solution:
+So a few things can be happening here I will start with the obvious. You may be including data from after the match date to predict the match. This logically does not make sense, I cannot predict a result using information from that
+match. If I want to include average team points in my model I have to get the average from every game UP TO the game I am predicting for. To do this you need to be using the lag and cummean functions to calculate rolling averages
+df %>% mutate(total_points_avg = cummean(lag(value)))
+If you do not do this you will see perfect correlation in your model summary (1.00 R value)
+
+Another issue is your model is not working or the accuracies do not seem right. If you are performing logistic regression values MUST BE BINARY. This means 0 or 1. Not 0.5,0.75 it HAS TO BE 0 or 1. Perfect example would be draws.
+Now there are not many draws so if we remove 169 matches out of 20,000 or so it wont matter. So what you are probably doing is logically saying 1 = Win, 0 = Loss and 0.5 = DRAW. 
+results <- results %>% mutate(
+  ELO = 0,
+  Opp_ELO = 0,
+  Result = ifelse(Result == "W", 1, Result),
+  Result = ifelse(Result == "L", 0, Result),
+  Result = ifelse(Result == "T", 0.5, Result),
+  Result = as.numeric(Result)
+)
+So what you have to do here is df <- df %>% mutate(binary_result = ifelse(result == 1, 1, 0))
+This makes it either 1 or 0. This is because logistic regression is for computing a probability for an event to occur that has TWO outcomes, win or loss, heads or tails, yes or no etc.
+
+
+
+
+
+
+
+
+
+
+
+
