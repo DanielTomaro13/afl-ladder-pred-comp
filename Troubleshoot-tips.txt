@@ -78,6 +78,10 @@ results <- results %>% mutate(
 So what you have to do here is df <- df %>% mutate(binary_result = ifelse(result == 1, 1, 0))
 This makes it either 1 or 0. This is because logistic regression is for computing a probability for an event to occur that has TWO outcomes, win or loss, heads or tails, yes or no etc.
 
+ELO is not being calculated rigth
+
+make sure your data set is ordered correctly. Because we create a home and away perspective the games need to be in order otherwise the ELO will get assigned to the wrong team
+
 
 
 
