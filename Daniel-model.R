@@ -121,6 +121,13 @@ for(i in 1:nrow(results)){
 
 results <- results %>%
   mutate(Elo_Difference = ELO - Opp_ELO)
+
+colnames(results)
+
+results <- results %>% select(
+  Date, Season, Round, game_id, Team, Opponent, Points_For, Points_Against, Result_Binary, Spread, Home, ELO, Opp_ELO,
+  Elo_Difference
+)
 #####################################################
 # Add form
 #results <- results %>%
@@ -130,6 +137,12 @@ results <- results %>%
     #form_last_5 = coalesce(lag(slide_dbl(Result, ~mean(.x, na.rm = TRUE), .before = 4, .complete = TRUE)), 0)
   #) %>%
   #ungroup()
+#####################################################
+# Add Weather
+#####################################################
+# Add Team Stats
+#####################################################
+# Add Other features
 #####################################################
 # Logisitc Regression
 logit_model <- glm(
