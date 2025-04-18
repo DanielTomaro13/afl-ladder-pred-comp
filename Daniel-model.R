@@ -9,7 +9,7 @@ library(xgboost)
 library(Matrix)
 library(elo)
 #####################################################
-results <- fetch_results_afltables(1897:2024)
+results <- fetch_results_afltables(2003:2025)
 colnames(results)
 restructure_afl_data <- function(afl_data) {
   afl_home <- data.frame(
@@ -66,13 +66,7 @@ results <- results %>% mutate(
 results <- results %>%
   mutate(Result_Binary = ifelse(Result == 1, 1, 0))
 
-results <- results %>%
-  mutate(
-    game_id = paste0(
-      Season, "_R", Round, "_",
-      pmin(Team, Opponent), "_vs_", pmax(Team, Opponent)
-    )
-  ) %>% arrange(Date, Season, Round, game_id)
+results <- results %>% arrange(Date, Season, Round, Game_ID)
 
 teams_elo <- unique(c(results$Team))
 
@@ -125,7 +119,7 @@ results <- results %>%
 colnames(results)
 
 results <- results %>% select(
-  Date, Season, Round, game_id, Team, Opponent, Points_For, Points_Against, Result_Binary, Spread, Home, ELO, Opp_ELO,
+  Date, Season, Round, Game_ID, Team, Opponent, Points_For, Points_Against, Result_Binary, Spread, Home, ELO, Opp_ELO,
   Elo_Difference
 )
 #####################################################
@@ -138,15 +132,155 @@ results <- results %>% select(
   #) %>%
   #ungroup()
 #####################################################
-# Add Weather
+# Add Weather - There will be an issue with team name mapping
 #####################################################
-# Add Team Stats
+# is_final
+#results <- results %>% mutate(
+  #is_final = ifelse(Round > 24, 1,0) # Some seasons have less than 24 rounds some are characters too
+#)
 #####################################################
-# Add Other features
+# Team stats
+stats <- fetch_player_stats_afltables(2003:2025)
+colnames(stats)
+colSums(is.na(stats))
+
+team_name_map <- c(
+  "Western Bulldogs" = "Footscray",
+  "GWS Giants" = "Greater Western Sydney",
+  "Sydney Swans" = "Sydney",
+  "Brisbane Lions" = "Brisbane",
+  "Gold Coast Suns" = "Gold Coast",
+  "Port Adelaide Power" = "Port Adelaide",
+  "North Melbourne Kangaroos" = "North Melbourne",
+  "Kangaroos" = "North Melbourne",
+  "West Coast Eagles" = "West Coast",
+  "Geelong Cats" = "Geelong",
+  "Hawthorn Hawks" = "Hawthorn",
+  "Richmond Tigers" = "Richmond",
+  "Carlton Blues" = "Carlton",
+  "St Kilda Saints" = "St Kilda",
+  "Melbourne Demons" = "Melbourne",
+  "Essendon Bombers" = "Essendon",
+  "Adelaide Crows" = "Adelaide",
+  "Fremantle Dockers" = "Fremantle",
+  "Collingwood Magpies" = "Collingwood"
+)
+results <- results %>%
+  mutate(
+    Team = recode(Team, !!!team_name_map),
+    Opponent = recode(Opponent, !!!team_name_map)
+  )
+stats <- stats %>%
+  mutate(
+    Team = recode(Team, !!!team_name_map),
+    Home.team = recode(Home.team, !!!team_name_map),
+    Away.team = recode(Away.team, !!!team_name_map)
+  )
+
+keep_na_cols <- c("Brownlow.Votes", "Bounces", "Time.on.Ground", "Player", "ID")
+stats <- stats %>%
+  mutate(
+    Brownlow.Votes = replace_na(Brownlow.Votes, 0),
+    Bounces = replace_na(Bounces, 0),
+    Time.on.Ground = replace_na(Time.on.Ground, 0)
+  )
+cols_to_keep <- names(stats)[colSums(is.na(stats)) == 0 | names(stats) %in% keep_na_cols]
+stats <- stats %>% select(all_of(cols_to_keep))
+colSums(is.na(stats))
+colnames(stats)
+
+stats <- stats %>% select(
+  Date, Season, Round, Player, ID, Team, Kicks, Marks, Handballs, Disposals, Goals, Behinds,
+  Tackles, Rebounds, Inside.50s, Clearances, Clangers, Brownlow.Votes, Contested.Possessions, Uncontested.Possessions, Contested.Marks,
+  Marks.Inside.50, One.Percenters, Goal.Assists, Time.on.Ground, Age, Career.Games, Coach
+) %>% arrange(Date, Season, Round, Team)
+colSums(is.na(stats))
+
+team_avg_stats <- stats %>%
+  arrange(Team, Date) %>%
+  group_by(Team) %>%
+  mutate(
+    avg_Kicks = lag(cummean(Kicks), default = NA),
+    avg_Marks = lag(cummean(Marks), default = NA),
+    avg_Handballs = lag(cummean(Handballs), default = NA),
+    avg_Disposals = lag(cummean(Disposals), default = NA),
+    avg_Goals = lag(cummean(Goals), default = NA),
+    avg_Behinds = lag(cummean(Behinds), default = NA),
+    avg_Tackles = lag(cummean(Tackles), default = NA),
+    avg_Rebounds = lag(cummean(Rebounds), default = NA),
+    avg_Inside.50s = lag(cummean(Inside.50s), default = NA),
+    avg_Clearances = lag(cummean(Clearances), default = NA),
+    avg_Clangers = lag(cummean(Clangers), default = NA),
+    avg_Brownlow.Votes = lag(cummean(Brownlow.Votes), default = NA),
+    avg_Contested.Possessions = lag(cummean(Contested.Possessions), default = NA),
+    avg_Uncontested.Possessions = lag(cummean(Uncontested.Possessions), default = NA),
+    avg_Contested.Marks = lag(cummean(Contested.Marks), default = NA),
+    avg_Marks.Inside.50 = lag(cummean(Marks.Inside.50), default = NA),
+    avg_One.Percenters = lag(cummean(One.Percenters), default = NA),
+    avg_Goal.Assists = lag(cummean(Goal.Assists), default = NA),
+    avg_Time.on.Ground = lag(cummean(Time.on.Ground), default = NA),
+    avg_Age = lag(cummean(Age), default = NA),
+    avg_Career_Games = lag(cummean(Career.Games), default = NA)
+  ) %>%
+  group_by(Date, Season, Round, Team) %>%
+  summarise(across(starts_with("avg_"), mean, na.rm = TRUE), .groups = "drop")
+
+colSums(is.na(team_avg_stats))
+
+results <- results %>%
+  mutate(Round = as.character(Round))
+
+results <- results %>%
+  left_join(team_avg_stats, by = c("Date", "Season", "Round", "Team"))
+colSums(is.na(results))
+results <- na.omit(results) # omitting finals games due to the round being character
+colSums(is.na(results))
+#####################################################
+# is_premiership_coach
+premiership_coaches <- c(
+  "Beveridge, Luke",
+  "Blight, Malcolm",
+  "Clarkson, Alastair",
+  "Goodwin, Simon",
+  "Hardwick, Damien",
+  "Jeans, Allan",
+  "Longmire, John",
+  "Malthouse, Michael",
+  "Malthouse, Mick",
+  "Matthews, Leigh",
+  "McRae, Craig",
+  "Pagan, Denis",
+  "Parkin, David",
+  "Roos, Paul",
+  "Scott, Chris",
+  "Sheedy, Kevin",
+  "Thompson, Mark",
+  "Walls, Robert",
+  "Williams, Mark"
+)
+
+coach <- stats %>%
+  select(Date, Season, Round, Team, Coach) %>%
+  distinct() %>%  # So we don't duplicate teams
+  mutate(is_premiership_coach = ifelse(Coach %in% premiership_coaches, 1, 0))
+
+results <- results %>%
+  left_join(coach, by = c("Date", "Season", "Round", "Team"))
 #####################################################
 # Logisitc Regression
 logit_model <- glm(
-  Result_Binary ~ Elo_Difference + Home, 
+  Result_Binary ~ 
+    Elo_Difference + 
+    Home +
+    # Team performance metrics
+    avg_Inside.50s +
+    avg_Clearances + 
+    avg_Contested.Possessions +
+    avg_Uncontested.Possessions +
+    # Team quality indicators
+    is_premiership_coach +
+    avg_Career_Games,
+    # + form_last_5, 
   family = binomial,
   data = results
 )
@@ -174,9 +308,21 @@ logit_accuracy_by_season
 table(results$Result_Binary, results$Logit_Forecast)
 #####################################################
 # Linear Regression 
-
-spread_lm <- lm(Spread ~ Elo_Difference + Home, data = results)
-
+spread_lm <- lm(
+  Spread ~ 
+    # Core predictors you already have
+    Elo_Difference + 
+    Home +
+    # Offensive and defensive metrics
+    avg_Inside.50s +
+    avg_Clearances + 
+    avg_Contested.Possessions +
+    avg_Goal.Assists +
+    # Team quality indicators
+    is_premiership_coach +
+    avg_Career_Games,
+  data = results
+)
 summary(spread_lm)
 
 results <- results %>%
@@ -201,11 +347,22 @@ season_accuracy_mae
 # Poisson Distribution
 
 poisson_model <- glm(
-  Points_For ~ Elo_Difference + Home,
+  Points_For ~ 
+    # Core predictors you already have
+    Elo_Difference + 
+    Home +
+    # Offensive metrics that directly relate to scoring
+    avg_Inside.50s +
+    avg_Marks.Inside.50 +
+    avg_Goal.Assists +
+    avg_Clearances + 
+    # Opponent defensive metrics
+    # avg_Opp_Rebounds +
+    # Team quality indicators
+    is_premiership_coach,
   family = poisson(link = "log"),
   data = results
 )
-
 summary(poisson_model)
 
 results <- results %>%
@@ -231,32 +388,76 @@ poisson_accuracy_by_season
 
 xgb_data <- results %>%
   filter(!is.na(Result_Binary)) %>%
-  select(Result_Binary, Elo_Difference, Home)
+  select(
+    # Target variable
+    Result_Binary, 
+    # Core predictors you already have
+    Elo_Difference, 
+    Home,
+    # Team performance metrics
+    avg_Inside.50s,
+    avg_Clearances, 
+    avg_Contested.Possessions,
+    avg_Marks.Inside.50,
+    avg_Goal.Assists,
+    # Team quality indicators
+    is_premiership_coach,
+    avg_Career_Games
+  )
 
-# Split into features (X) and target (y)
 X <- as.matrix(xgb_data %>% select(-Result_Binary))
 y <- xgb_data$Result_Binary
 
-# Convert to DMatrix (xgboost's format)
 dtrain <- xgb.DMatrix(data = X, label = y)
 
 params <- list(
   objective = "binary:logistic",
   eval_metric = "logloss",
-  max_depth = 3,
-  eta = 0.1
+  max_depth = 5,                # Increased from 3 for more complex relationships
+  eta = 0.05,                   # Reduced from 0.1 for better generalization
+  subsample = 0.8,              # Added subsample for robustness
+  colsample_bytree = 0.8,       # Added column sampling
+  min_child_weight = 3          # Added to prevent overfitting
 )
+
+cv_results <- xgb.cv(
+  params = params,
+  data = dtrain,
+  nrounds = 500,
+  nfold = 5,
+  early_stopping_rounds = 50,
+  verbose = 0
+)
+
+optimal_nrounds <- which.min(cv_results$evaluation_log$test_logloss_mean)
 
 xgb_model <- xgboost(
   params = params,
   data = dtrain,
-  nrounds = 100,
+  nrounds = optimal_nrounds,
   verbose = 0
 )
 
-results$XGB_Win_Prob <- predict(xgb_model, as.matrix(results %>% select(Elo_Difference, Home)))
+results$XGB_Win_Prob <- predict(
+  xgb_model, 
+  as.matrix(results %>% select(
+    Elo_Difference, Home, avg_Inside.50s, avg_Clearances, 
+    avg_Contested.Possessions, avg_Marks.Inside.50, avg_Goal.Assists, 
+    is_premiership_coach, avg_Career_Games
+  ))
+)
 results$XGB_Forecast <- ifelse(results$XGB_Win_Prob > 0.5, 1, 0)
 results$XGB_Correct <- ifelse(results$XGB_Forecast == results$Result_Binary, 1, 0)
+
+xgb_accuracy <- results %>%
+  group_by(Season) %>%
+  summarise(
+    Accuracy = mean(XGB_Correct, na.rm = TRUE) * 100,
+    .groups = "drop"
+  ) %>%
+  arrange(desc(Season))
+
+xgb.importance(model = xgb_model)
 
 xgb_accuracy_by_season <- results %>%
   group_by(Season) %>%
@@ -267,17 +468,15 @@ xgb_accuracy_by_season <- results %>%
   arrange(desc(Season))
 
 xgb_accuracy_by_season
-
-xgb.importance(model = xgb_model)
 #####################################################
 # Ladder
 
 # Actual Ladder
 ladder_actual <- results %>%
-  filter(Season == 2024) %>%
+  filter(Season == 2025) %>%
   group_by(Team) %>%
   summarise(
-    Actual_Wins = sum(Result == 1),
+    Actual_Wins = sum(Result_Binary == 1),
     Actual_Points = Actual_Wins * 4,
     .groups = "drop"
   ) %>%
@@ -286,7 +485,7 @@ ladder_actual <- results %>%
 
 # Logistic Regression
 ladder_logit <- results %>%
-  filter(Season == 2024) %>%
+  filter(Season == 2025) %>%
   group_by(Team) %>%
   summarise(
     Logit_Wins = sum(Logit_Forecast == 1, na.rm = TRUE),
@@ -298,7 +497,7 @@ ladder_logit <- results %>%
 
 # XGBoost
 ladder_xgb <- results %>%
-  filter(Season == 2024) %>%
+  filter(Season == 2025) %>%
   group_by(Team) %>%
   summarise(
     XGB_Wins = sum(XGB_Forecast == 1, na.rm = TRUE),
@@ -310,7 +509,7 @@ ladder_xgb <- results %>%
 
 # Poisson
 ladder_poisson <- results %>%
-  filter(Season == 2024) %>%
+  filter(Season == 2025) %>%
   group_by(Team) %>%
   summarise(
     Poisson_Wins = sum(Poisson_Pred_Result == 1, na.rm = TRUE),
@@ -328,7 +527,7 @@ ladder_poisson <- results %>%
 
 # Linear Margin
 ladder_linear <- results %>%
-  filter(Season == 2024) %>%
+  filter(Season == 2025) %>%
   group_by(Team) %>%
   summarise(
     Linear_Wins = sum(Margin_Pred_Result == 1, na.rm = TRUE),
@@ -362,7 +561,7 @@ rank_diff_summary <- ladder_comparison %>%
 
 rank_diff_summary
 #####################################################
-# 2025 Future Predictions
+# 2025 Future Predictions - Add the features from above into 2025 now
 fixture_2025 <- fetch_fixture_footywire(2025)
 colnames(fixture_2025)
 
@@ -401,10 +600,6 @@ names(fixture_2025) <- c("Date", "Season", "Game_Id", "Round", "Team", "Opponent
 
 fixture_2025 <- fixture_2025 %>%
   mutate(Elo_Difference = ELO - Opp_ELO)
-#####################################################
-# Add placeholder form
-#fixture_2025 <- fixture_2025 %>%
-  #mutate(form_last_5 = 0)
 #####################################################
 # Logit
 fixture_2025 <- fixture_2025 %>%
