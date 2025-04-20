@@ -16,6 +16,7 @@ restructure_afl_data <- function(afl_data) {
     Date = afl_data$Date,
     Season = afl_data$Season,
     Round = afl_data$Round.Number,
+    Game_Id = paste0(afl_data$Date, "_", afl_data$Home.Team, "_vs_", afl_data$Away.Team),
     Team = afl_data$Home.Team,
     Opponent = afl_data$Away.Team,
     Result = ifelse(afl_data$Home.Points > afl_data$Away.Points, "W", "L"),
@@ -32,6 +33,7 @@ restructure_afl_data <- function(afl_data) {
     Date = afl_data$Date,
     Season = afl_data$Season,
     Round = afl_data$Round.Number,
+    Game_Id = paste0(afl_data$Date, "_", afl_data$Home.Team, "_vs_", afl_data$Away.Team),
     Team = afl_data$Away.Team,
     Opponent = afl_data$Home.Team,
     Result = ifelse(afl_data$Away.Points > afl_data$Home.Points, "W", "L"),
@@ -119,7 +121,7 @@ results <- results %>%
 colnames(results)
 
 results <- results %>% select(
-  Date, Season, Round, Game_ID, Team, Opponent, Points_For, Points_Against, Result_Binary, Spread, Home, ELO, Opp_ELO,
+  Date, Season, Round, Game_Id, Game_ID, Team, Opponent, Points_For, Points_Against, Result_Binary, Spread, Home, ELO, Opp_ELO,
   Elo_Difference
 )
 #####################################################
@@ -561,7 +563,7 @@ rank_diff_summary <- ladder_comparison %>%
 
 rank_diff_summary
 #####################################################
-# 2025 Future Predictions - Add the features from above into 2025 now
+# 2025 Future Predictions
 fixture_2025 <- fetch_fixture_footywire(2025)
 colnames(fixture_2025)
 
@@ -601,6 +603,29 @@ names(fixture_2025) <- c("Date", "Season", "Game_Id", "Round", "Team", "Opponent
 fixture_2025 <- fixture_2025 %>%
   mutate(Elo_Difference = ELO - Opp_ELO)
 #####################################################
+# Adding features into the 2025 dataset
+results_2025 <- results %>%
+  filter(Season == 2025) %>%
+  mutate(
+    Team = ifelse(Team == "Brisbane", "Brisbane Lions", Team),
+    Opponent = ifelse(Opponent == "Brisbane", "Brisbane Lions", Opponent)
+  )
+
+latest_stats <- results_2025 %>%
+  group_by(Team) %>%
+  filter(Round == max(Round)) %>%
+  ungroup() %>%
+  select(Game_Id, Team, starts_with("avg_"), Coach, is_premiership_coach)
+
+fixture_2025 <- fixture_2025 %>%
+  left_join(
+    results_2025 %>%
+      select(Game_Id, Team, starts_with("avg_"), Coach, is_premiership_coach),
+    by = c("Game_Id", "Team")
+  )
+
+# So for future rounds its full of NA, so we need to make models to predict team stats too? Basically simulate a whole game?
+#####################################################
 # Logit
 fixture_2025 <- fixture_2025 %>%
   mutate(
@@ -630,11 +655,29 @@ fixture_2025 <- fixture_2025 %>%
   )
 #####################################################
 # XG
+predict_data <- fixture_2025 %>%
+  select(Elo_Difference,
+         Home,
+         avg_Inside.50s,
+         avg_Clearances,
+         avg_Contested.Possessions,
+         avg_Marks.Inside.50,
+         avg_Goal.Assists,
+         is_premiership_coach,
+         avg_Career_Games)
+
 fixture_2025 <- fixture_2025 %>%
   mutate(
-    XGB_Win_Prob = predict(xgb_model, as.matrix(select(., Elo_Difference, Home))),
+    XGB_Win_Prob = predict(xgb_model, as.matrix(predict_data)),
     XGB_Forecast = ifelse(XGB_Win_Prob > 0.5, 1, 0)
-  )
+  ) %>%
+  group_by(Game_Id) %>%
+  mutate(
+    XGB_Winner = ifelse(XGB_Win_Prob == max(XGB_Win_Prob), 1, 0)
+  ) %>%
+  ungroup()
+
+XGB_pred <- fixture_2025 %>% select(Round, Team, Opponent, XGB_Win_Prob, XGB_Winner)
 #####################################################
 ladder_2025_logit <- fixture_2025 %>%
   filter(Home == TRUE) %>%
