@@ -1,0 +1,88 @@
+How to use GitHub
+
+Here's a full step-by-step guide to help you **clone that GitHub repo**, create your own **branch**, make **local changes**, and **push it to your own GitHub** account.
+
+---
+
+### ✅ Step 1: **Fork the Repo to Your Own GitHub**
+Since the repo is owned by `DanielTomaro13`, you should first fork it so that you can push changes to **your own GitHub**.
+
+1. Go to: [https://github.com/DanielTomaro13/afl-ladder-pred-comp](https://github.com/DanielTomaro13/afl-ladder-pred-comp)
+2. Click the **Fork** button (top-right of the page)
+3. Choose your GitHub account as the destination
+
+---
+
+### ✅ Step 2: **Clone Your Fork Locally**
+Once you've forked it, copy the **HTTPS URL** of your forked repo (it'll look like `https://github.com/YOUR_USERNAME/afl-ladder-pred-comp.git`)
+
+Then in your terminal:
+
+
+# Clone your fork
+git clone https://github.com/YOUR_USERNAME/afl-ladder-pred-comp.git
+
+# Navigate into the project folder
+cd afl-ladder-pred-comp
+
+
+---
+
+### ✅ Step 3: **Set the Original Repo as "upstream" (optional but good practice)**
+
+This helps you sync changes later from the original repo if needed.
+
+
+git remote add upstream https://github.com/DanielTomaro13/afl-ladder-pred-comp.git
+
+
+You can verify remotes with:
+
+
+git remote -v
+
+
+---
+
+### ✅ Step 4: **Create Your Own Branch**
+Now create a new branch for your local changes:
+
+
+git checkout -b my-feature-branch
+
+Replace `my-feature-branch` with a meaningful name. This can just be your first name
+
+
+
+### ✅ Step 5: **Make Local Changes**
+Do whatever edits, scripts, or changes you need in the repo files.
+
+After you're done:
+
+
+git add .
+git commit -m "My changes to the AFL ladder prediction"
+
+You can add whatever you like in the comment , usually a very very brief description of changes
+---
+
+### ✅ Step 6: **Push to Your GitHub Fork**
+Push your branch up to **your fork**:
+
+
+git push origin my-feature-branch
+
+
+Now you'll see your branch in your GitHub repo.
+
+---
+
+### ✅ (Optional) Step 7: **Create a Pull Request**
+If you ever want to merge your changes back into the original repo (`DanielTomaro13/afl-ladder-pred-comp`):
+
+1. Go to your GitHub repo
+2. You’ll see a prompt to create a **Pull Request**
+3. Open it and write a description of what you've changed
+
+---
+
