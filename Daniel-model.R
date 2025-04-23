@@ -126,13 +126,13 @@ results <- results %>% select(
 )
 #####################################################
 # Add form
-#results <- results %>%
-  #arrange(Team, Date) %>%
-  #group_by(Team) %>%
-  #mutate(
-    #form_last_5 = coalesce(lag(slide_dbl(Result, ~mean(.x, na.rm = TRUE), .before = 4, .complete = TRUE)), 0)
-  #) %>%
-  #ungroup()
+results <- results %>%
+  arrange(Team, Date) %>%
+  group_by(Team) %>%
+  mutate(
+    form_last_5 = coalesce(lag(slide_dbl(Result_Binary, ~mean(.x, na.rm = TRUE), .before = 4, .complete = TRUE)), 0)
+  ) %>%
+  ungroup()
 #####################################################
 # Add Weather - There will be an issue with team name mapping
 #####################################################
@@ -281,8 +281,8 @@ logit_model <- glm(
     avg_Uncontested.Possessions +
     # Team quality indicators
     is_premiership_coach +
-    avg_Career_Games,
-    # + form_last_5, 
+    avg_Career_Games +
+    form_last_5,
   family = binomial,
   data = results
 )
@@ -322,7 +322,8 @@ spread_lm <- lm(
     avg_Goal.Assists +
     # Team quality indicators
     is_premiership_coach +
-    avg_Career_Games,
+    avg_Career_Games +
+    form_last_5,
   data = results
 )
 summary(spread_lm)
@@ -361,7 +362,8 @@ poisson_model <- glm(
     # Opponent defensive metrics
     # avg_Opp_Rebounds +
     # Team quality indicators
-    is_premiership_coach,
+    is_premiership_coach, +
+    form_last_5,
   family = poisson(link = "log"),
   data = results
 )
@@ -404,6 +406,7 @@ xgb_data <- results %>%
     avg_Goal.Assists,
     # Team quality indicators
     is_premiership_coach,
+    form_last_5,
     avg_Career_Games
   )
 
@@ -445,7 +448,7 @@ results$XGB_Win_Prob <- predict(
   as.matrix(results %>% select(
     Elo_Difference, Home, avg_Inside.50s, avg_Clearances, 
     avg_Contested.Possessions, avg_Marks.Inside.50, avg_Goal.Assists, 
-    is_premiership_coach, avg_Career_Games
+    is_premiership_coach, form_last_5, avg_Career_Games
   ))
 )
 results$XGB_Forecast <- ifelse(results$XGB_Win_Prob > 0.5, 1, 0)
@@ -562,6 +565,7 @@ rank_diff_summary <- ladder_comparison %>%
   )
 
 rank_diff_summary
+result_2025 <- results %>% filter(Season == 2025, Round == 7)
 #####################################################
 # 2025 Future Predictions
 fixture_2025 <- fetch_fixture_footywire(2025)
@@ -626,6 +630,37 @@ fixture_2025 <- fixture_2025 %>%
 
 # So for future rounds its full of NA, so we need to make models to predict team stats too? Basically simulate a whole game?
 #####################################################
+# Adding Form - first we need to add results of games that have taken place
+winners <- fetch_results_footywire(2025)
+colnames(winners)
+
+results_long <- winners %>%
+  select(Date, Round, Venue, Home.Team, Away.Team, Home.Points, Away.Points) %>%
+  pivot_longer(cols = c(Home.Team, Away.Team), names_to = "HomeAway", values_to = "Team") %>%
+  mutate(
+    Points = ifelse(HomeAway == "Home.Team", Home.Points, Away.Points),
+    OpponentPoints = ifelse(HomeAway == "Home.Team", Away.Points, Home.Points),
+    Result_Binary = ifelse(Points > OpponentPoints, 1, 0)
+  ) %>%
+  select(Date, Team, Result_Binary) %>% 
+  mutate(
+    Team = ifelse(Team == "Western Bulldogs", "Footscray", Team),
+    Team = ifelse(Team == "Brisbane", "Brisbane Lions", Team)
+  )
+
+fixture_2025 <- fixture_2025 %>%
+  left_join(results_long %>% select(Date, Team, Result_Binary),
+            by = c("Date", "Team"))
+
+fixture_2025 <- fixture_2025 %>%
+  arrange(Team, Date) %>%
+  group_by(Team) %>%
+  mutate(
+    form_last_5 = coalesce(lag(slide_dbl(Result_Binary, ~mean(.x, na.rm = TRUE), .before = 4, .complete = TRUE)), 0)
+  ) %>%
+  ungroup() %>% 
+  arrange(Date, Season, Round)
+#####################################################
 # Logit
 fixture_2025 <- fixture_2025 %>%
   mutate(
@@ -664,6 +699,7 @@ predict_data <- fixture_2025 %>%
          avg_Marks.Inside.50,
          avg_Goal.Assists,
          is_premiership_coach,
+         form_last_5,
          avg_Career_Games)
 
 fixture_2025 <- fixture_2025 %>%
