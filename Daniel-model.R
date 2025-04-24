@@ -202,41 +202,61 @@ team_avg_stats <- stats %>%
   arrange(Team, Date) %>%
   group_by(Team) %>%
   mutate(
-    avg_Kicks = lag(cummean(Kicks), default = NA),
-    avg_Marks = lag(cummean(Marks), default = NA),
-    avg_Handballs = lag(cummean(Handballs), default = NA),
-    avg_Disposals = lag(cummean(Disposals), default = NA),
-    avg_Goals = lag(cummean(Goals), default = NA),
-    avg_Behinds = lag(cummean(Behinds), default = NA),
-    avg_Tackles = lag(cummean(Tackles), default = NA),
-    avg_Rebounds = lag(cummean(Rebounds), default = NA),
-    avg_Inside.50s = lag(cummean(Inside.50s), default = NA),
-    avg_Clearances = lag(cummean(Clearances), default = NA),
-    avg_Clangers = lag(cummean(Clangers), default = NA),
-    avg_Brownlow.Votes = lag(cummean(Brownlow.Votes), default = NA),
-    avg_Contested.Possessions = lag(cummean(Contested.Possessions), default = NA),
-    avg_Uncontested.Possessions = lag(cummean(Uncontested.Possessions), default = NA),
-    avg_Contested.Marks = lag(cummean(Contested.Marks), default = NA),
-    avg_Marks.Inside.50 = lag(cummean(Marks.Inside.50), default = NA),
-    avg_One.Percenters = lag(cummean(One.Percenters), default = NA),
-    avg_Goal.Assists = lag(cummean(Goal.Assists), default = NA),
-    avg_Time.on.Ground = lag(cummean(Time.on.Ground), default = NA),
-    avg_Age = lag(cummean(Age), default = NA),
-    avg_Career_Games = lag(cummean(Career.Games), default = NA)
+    avg_Kicks = lag(cummean(Kicks)),
+    avg_Marks = lag(cummean(Marks)),
+    avg_Handballs = lag(cummean(Handballs)),
+    avg_Disposals = lag(cummean(Disposals)),
+    avg_Goals = lag(cummean(Goals)),
+    avg_Behinds = lag(cummean(Behinds)),
+    avg_Tackles = lag(cummean(Tackles)),
+    avg_Rebounds = lag(cummean(Rebounds)),
+    avg_Inside.50s = lag(cummean(Inside.50s)),
+    avg_Clearances = lag(cummean(Clearances)),
+    avg_Clangers = lag(cummean(Clangers)),
+    avg_Brownlow.Votes = lag(cummean(Brownlow.Votes)),
+    avg_Contested.Possessions = lag(cummean(Contested.Possessions)),
+    avg_Uncontested.Possessions = lag(cummean(Uncontested.Possessions)),
+    avg_Contested.Marks = lag(cummean(Contested.Marks)),
+    avg_Marks.Inside.50 = lag(cummean(Marks.Inside.50)),
+    avg_One.Percenters = lag(cummean(One.Percenters)),
+    avg_Goal.Assists = lag(cummean(Goal.Assists)),
+    avg_Time.on.Ground = lag(cummean(Time.on.Ground)),
+    avg_Age = lag(cummean(Age)),
+    avg_Career_Games = lag(cummean(Career.Games)),
+    
+    roll3_Kicks = lag(slide_dbl(Kicks, mean, .before = 2, .complete = TRUE)),
+    roll3_Marks = lag(slide_dbl(Marks, mean, .before = 2, .complete = TRUE)),
+    roll3_Handballs = lag(slide_dbl(Handballs, mean, .before = 2, .complete = TRUE)),
+    roll3_Disposals = lag(slide_dbl(Disposals, mean, .before = 2, .complete = TRUE)),
+    roll3_Goals = lag(slide_dbl(Goals, mean, .before = 2, .complete = TRUE)),
+    roll3_Behinds = lag(slide_dbl(Behinds, mean, .before = 2, .complete = TRUE)),
+    roll3_Tackles = lag(slide_dbl(Tackles, mean, .before = 2, .complete = TRUE)),
+    roll3_Rebounds = lag(slide_dbl(Rebounds, mean, .before = 2, .complete = TRUE)),
+    roll3_Inside.50s = lag(slide_dbl(Inside.50s, mean, .before = 2, .complete = TRUE)),
+    roll3_Clearances = lag(slide_dbl(Clearances, mean, .before = 2, .complete = TRUE)),
+    roll3_Clangers = lag(slide_dbl(Clangers, mean, .before = 2, .complete = TRUE)),
+    roll3_Brownlow.Votes = lag(slide_dbl(Brownlow.Votes, mean, .before = 2, .complete = TRUE)),
+    roll3_Contested.Possessions = lag(slide_dbl(Contested.Possessions, mean, .before = 2, .complete = TRUE)),
+    roll3_Uncontested.Possessions = lag(slide_dbl(Uncontested.Possessions, mean, .before = 2, .complete = TRUE)),
+    roll3_Contested.Marks = lag(slide_dbl(Contested.Marks, mean, .before = 2, .complete = TRUE)),
+    roll3_Marks.Inside.50 = lag(slide_dbl(Marks.Inside.50, mean, .before = 2, .complete = TRUE)),
+    roll3_One.Percenters = lag(slide_dbl(One.Percenters, mean, .before = 2, .complete = TRUE)),
+    roll3_Goal.Assists = lag(slide_dbl(Goal.Assists, mean, .before = 2, .complete = TRUE)),
+    roll3_Time.on.Ground = lag(slide_dbl(Time.on.Ground, mean, .before = 2, .complete = TRUE)),
+    roll3_Age = lag(slide_dbl(Age, mean, .before = 2, .complete = TRUE)),
+    roll3_Career_Games = lag(slide_dbl(Career.Games, mean, .before = 2, .complete = TRUE))
   ) %>%
   group_by(Date, Season, Round, Team) %>%
-  summarise(across(starts_with("avg_"), mean, na.rm = TRUE), .groups = "drop")
-
-colSums(is.na(team_avg_stats))
-
-results <- results %>%
-  mutate(Round = as.character(Round))
+  summarise(across(starts_with("avg_"), mean, na.rm = TRUE),
+            across(starts_with("roll3_"), mean, na.rm = TRUE),
+            .groups = "drop")
 
 results <- results %>%
+  mutate(Round = as.character(Round)) %>%
   left_join(team_avg_stats, by = c("Date", "Season", "Round", "Team"))
-colSums(is.na(results))
-results <- na.omit(results) # omitting finals games due to the round being character
-colSums(is.na(results))
+
+
+results <- na.omit(results)
 #####################################################
 # is_premiership_coach
 premiership_coaches <- c(
@@ -274,19 +294,18 @@ logit_model <- glm(
   Result_Binary ~ 
     Elo_Difference + 
     Home +
-    # Team performance metrics
-    avg_Inside.50s +
-    avg_Clearances + 
-    avg_Contested.Possessions +
-    avg_Uncontested.Possessions +
+    # Team performance metrics - both avg and rolling 3
+    avg_Inside.50s + roll3_Inside.50s +
+    avg_Clearances + roll3_Clearances +
+    avg_Contested.Possessions + roll3_Contested.Possessions +
+    avg_Uncontested.Possessions + roll3_Uncontested.Possessions +
     # Team quality indicators
     is_premiership_coach +
-    avg_Career_Games +
+    avg_Career_Games + roll3_Career_Games +
     form_last_5,
   family = binomial,
   data = results
 )
-
 summary(logit_model)
 
 results <- results %>%
@@ -312,21 +331,21 @@ table(results$Result_Binary, results$Logit_Forecast)
 # Linear Regression 
 spread_lm <- lm(
   Spread ~ 
-    # Core predictors you already have
     Elo_Difference + 
     Home +
-    # Offensive and defensive metrics
-    avg_Inside.50s +
-    avg_Clearances + 
-    avg_Contested.Possessions +
-    avg_Goal.Assists +
+    # Both avg and roll3 performance metrics
+    avg_Inside.50s + roll3_Inside.50s +
+    avg_Clearances + roll3_Clearances +
+    avg_Contested.Possessions + roll3_Contested.Possessions +
+    avg_Goal.Assists + roll3_Goal.Assists +
     # Team quality indicators
     is_premiership_coach +
-    avg_Career_Games +
+    avg_Career_Games + roll3_Career_Games +
     form_last_5,
   data = results
 )
 summary(spread_lm)
+
 
 results <- results %>%
   mutate(
@@ -351,23 +370,20 @@ season_accuracy_mae
 
 poisson_model <- glm(
   Points_For ~ 
-    # Core predictors you already have
     Elo_Difference + 
     Home +
-    # Offensive metrics that directly relate to scoring
-    avg_Inside.50s +
-    avg_Marks.Inside.50 +
-    avg_Goal.Assists +
-    avg_Clearances + 
-    # Opponent defensive metrics
-    # avg_Opp_Rebounds +
-    # Team quality indicators
-    is_premiership_coach, +
+    avg_Inside.50s + roll3_Inside.50s +
+    avg_Marks.Inside.50 + roll3_Marks.Inside.50 +
+    avg_Goal.Assists + roll3_Goal.Assists +
+    avg_Clearances + roll3_Clearances +
+    is_premiership_coach +
     form_last_5,
   family = poisson(link = "log"),
   data = results
 )
+
 summary(poisson_model)
+
 
 results <- results %>%
   mutate(
@@ -388,27 +404,33 @@ poisson_accuracy_by_season <- results %>%
 
 poisson_accuracy_by_season
 #####################################################
-# XG Boost
+# XG Boost - this has the issue where both teams are predicted to lose
 
 xgb_data <- results %>%
   filter(!is.na(Result_Binary)) %>%
   select(
-    # Target variable
-    Result_Binary, 
-    # Core predictors you already have
+    # Target
+    Result_Binary,
+    
+    # Core predictors
     Elo_Difference, 
     Home,
-    # Team performance metrics
-    avg_Inside.50s,
-    avg_Clearances, 
-    avg_Contested.Possessions,
-    avg_Marks.Inside.50,
-    avg_Goal.Assists,
+    
+    # avg_ metrics
+    avg_Inside.50s, avg_Clearances, avg_Contested.Possessions,
+    avg_Marks.Inside.50, avg_Goal.Assists,
+    avg_Career_Games,
+    
+    # roll3_ metrics
+    roll3_Inside.50s, roll3_Clearances, roll3_Contested.Possessions,
+    roll3_Marks.Inside.50, roll3_Goal.Assists,
+    roll3_Career_Games,
+    
     # Team quality indicators
     is_premiership_coach,
-    form_last_5,
-    avg_Career_Games
+    form_last_5
   )
+
 
 X <- as.matrix(xgb_data %>% select(-Result_Binary))
 y <- xgb_data$Result_Binary
@@ -446,11 +468,23 @@ xgb_model <- xgboost(
 results$XGB_Win_Prob <- predict(
   xgb_model, 
   as.matrix(results %>% select(
-    Elo_Difference, Home, avg_Inside.50s, avg_Clearances, 
-    avg_Contested.Possessions, avg_Marks.Inside.50, avg_Goal.Assists, 
-    is_premiership_coach, form_last_5, avg_Career_Games
+    Elo_Difference, 
+    Home,
+    
+    # avg_ predictors
+    avg_Inside.50s, avg_Clearances, avg_Contested.Possessions,
+    avg_Marks.Inside.50, avg_Goal.Assists, avg_Career_Games,
+    
+    # roll3_ predictors
+    roll3_Inside.50s, roll3_Clearances, roll3_Contested.Possessions,
+    roll3_Marks.Inside.50, roll3_Goal.Assists, roll3_Career_Games,
+    
+    # team quality indicators
+    is_premiership_coach,
+    form_last_5
   ))
 )
+
 results$XGB_Forecast <- ifelse(results$XGB_Win_Prob > 0.5, 1, 0)
 results$XGB_Correct <- ifelse(results$XGB_Forecast == results$Result_Binary, 1, 0)
 
@@ -619,12 +653,12 @@ latest_stats <- results_2025 %>%
   group_by(Team) %>%
   filter(Round == max(Round)) %>%
   ungroup() %>%
-  select(Game_Id, Team, starts_with("avg_"), Coach, is_premiership_coach)
+  select(Game_Id, Team, starts_with("avg_"), starts_with("roll3_"), Coach, is_premiership_coach)
 
 fixture_2025 <- fixture_2025 %>%
   left_join(
     results_2025 %>%
-      select(Game_Id, Team, starts_with("avg_"), Coach, is_premiership_coach),
+      select(Game_Id, Team, starts_with("avg_"), starts_with("roll3_"), Coach, is_premiership_coach),
     by = c("Game_Id", "Team")
   )
 
@@ -691,16 +725,31 @@ fixture_2025 <- fixture_2025 %>%
 #####################################################
 # XG
 predict_data <- fixture_2025 %>%
-  select(Elo_Difference,
-         Home,
-         avg_Inside.50s,
-         avg_Clearances,
-         avg_Contested.Possessions,
-         avg_Marks.Inside.50,
-         avg_Goal.Assists,
-         is_premiership_coach,
-         form_last_5,
-         avg_Career_Games)
+  select(
+    Elo_Difference,
+    Home,
+    
+    # avg_ metrics
+    avg_Inside.50s,
+    avg_Clearances,
+    avg_Contested.Possessions,
+    avg_Marks.Inside.50,
+    avg_Goal.Assists,
+    avg_Career_Games,
+    
+    # roll3_ metrics
+    roll3_Inside.50s,
+    roll3_Clearances,
+    roll3_Contested.Possessions,
+    roll3_Marks.Inside.50,
+    roll3_Goal.Assists,
+    roll3_Career_Games,
+    
+    # Team quality indicators
+    is_premiership_coach,
+    form_last_5
+  )
+
 
 fixture_2025 <- fixture_2025 %>%
   mutate(
