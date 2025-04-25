@@ -8,6 +8,7 @@ library(slider)
 library(xgboost)
 library(Matrix)
 library(elo)
+library(data.table)
 #####################################################
 results <- fetch_results_afltables(2003:2025)
 colnames(results)
@@ -135,6 +136,31 @@ results <- results %>%
   ungroup()
 #####################################################
 # Add Weather - There will be an issue with team name mapping
+weather <- fetch_results_afl(2003:2025)
+weather <- weather %>% select(match.date, round.roundNumber, match.homeTeam.name, match.awayTeam.name,
+                              weather.description, weather.tempInCelsius, weather.weatherType)
+
+weather_flags <- weather %>%
+  mutate(
+    Date = as.Date(match.date),
+    is_wet_weather = as.integer(grepl("RAIN|WINDY", weather.weatherType, ignore.case = TRUE))
+  ) %>%
+  rename(
+    Home.Team = match.homeTeam.name,
+    Away.Team = match.awayTeam.name
+  ) %>%
+  select(Date, Home.Team, Away.Team, is_wet_weather)
+
+weather_flags_long <- weather_flags %>%
+  pivot_longer(cols = c(Home.Team, Away.Team),
+               names_to = "HomeAway",
+               values_to = "Team") %>%
+  select(Date, Team, is_wet_weather)
+
+results <- results %>%
+  left_join(weather_flags_long, by = c("Date", "Team")) %>%
+  mutate(is_wet_weather = replace_na(is_wet_weather, 0))
+
 #####################################################
 # is_final
 #results <- results %>% mutate(
@@ -289,24 +315,61 @@ coach <- stats %>%
 results <- results %>%
   left_join(coach, by = c("Date", "Season", "Round", "Team"))
 #####################################################
+# Time between previous game
+results <- results %>%
+  arrange(Team, Date) %>%
+  group_by(Team) %>%
+  mutate(
+    rest_days = as.numeric(Date - lag(Date)),
+    rest_days = replace_na(rest_days, 0),            
+    rest_days = pmin(rest_days, 14),                 # Cap it
+    is_short_turnaround = ifelse(rest_days < 6, 1, 0)
+  ) %>%
+  ungroup()
+#####################################################
+# Opponent form
+results <- results %>%
+  left_join(results %>%
+              select(Date, Team, opp_form_last_5 = form_last_5),
+            by = c("Date", "Opponent" = "Team"))
+#####################################################
+# Streak
+# results <- results %>%
+#   arrange(Team, Date) %>%
+#   group_by(Team) %>%
+#   mutate(
+#     rleid_id = data.table::rleid(Result_Binary),  # run-length ID
+#     win_streak = ifelse(Result_Binary == 1, ave(Result_Binary, rleid_id, FUN = seq_along), 0),
+#     lose_streak = ifelse(Result_Binary == 0, ave(Result_Binary, rleid_id, FUN = seq_along), 0)
+#   ) %>%
+#   ungroup()
+#####################################################
 # Logisitc Regression
 logit_model <- glm(
   Result_Binary ~ 
     Elo_Difference + 
     Home +
+    
     # Team performance metrics - both avg and rolling 3
     avg_Inside.50s + roll3_Inside.50s +
     avg_Clearances + roll3_Clearances +
     avg_Contested.Possessions + roll3_Contested.Possessions +
     avg_Uncontested.Possessions + roll3_Uncontested.Possessions +
+    
     # Team quality indicators
     is_premiership_coach +
     avg_Career_Games + roll3_Career_Games +
-    form_last_5,
+    form_last_5 +
+    
+    # New features
+    rest_days + is_short_turnaround + opp_form_last_5,
+  
   family = binomial,
   data = results
 )
+
 summary(logit_model)
+
 
 results <- results %>%
   mutate(
@@ -341,7 +404,7 @@ spread_lm <- lm(
     # Team quality indicators
     is_premiership_coach +
     avg_Career_Games + roll3_Career_Games +
-    form_last_5,
+    form_last_5 + rest_days + is_short_turnaround + opp_form_last_5,
   data = results
 )
 summary(spread_lm)
@@ -377,7 +440,7 @@ poisson_model <- glm(
     avg_Goal.Assists + roll3_Goal.Assists +
     avg_Clearances + roll3_Clearances +
     is_premiership_coach +
-    form_last_5,
+    form_last_5 + rest_days + is_short_turnaround + opp_form_last_5,
   family = poisson(link = "log"),
   data = results
 )
@@ -428,7 +491,10 @@ xgb_data <- results %>%
     
     # Team quality indicators
     is_premiership_coach,
-    form_last_5
+    form_last_5,
+    rest_days,
+    is_short_turnaround,
+    opp_form_last_5
   )
 
 
@@ -481,7 +547,10 @@ results$XGB_Win_Prob <- predict(
     
     # team quality indicators
     is_premiership_coach,
-    form_last_5
+    form_last_5,
+    rest_days,
+    is_short_turnaround,
+    opp_form_last_5
   ))
 )
 
@@ -599,7 +668,7 @@ rank_diff_summary <- ladder_comparison %>%
   )
 
 rank_diff_summary
-result_2025 <- results %>% filter(Season == 2025, Round == 7)
+result_2025 <- results %>% filter(Season == 2025, Round == 8)
 #####################################################
 # 2025 Future Predictions
 fixture_2025 <- fetch_fixture_footywire(2025)
@@ -695,6 +764,35 @@ fixture_2025 <- fixture_2025 %>%
   ungroup() %>% 
   arrange(Date, Season, Round)
 #####################################################
+# Time between previous game
+fixture_2025 <- fixture_2025 %>%
+  arrange(Team, Date) %>%
+  group_by(Team) %>%
+  mutate(
+    rest_days = as.numeric(Date - lag(Date)),
+    rest_days = replace_na(rest_days, 0),            
+    rest_days = pmin(rest_days, 14),                 # Cap it
+    is_short_turnaround = ifelse(rest_days < 6, 1, 0)
+  ) %>%
+  ungroup()
+#####################################################
+# Opponent form
+fixture_2025 <- fixture_2025 %>%
+  left_join(results %>%
+              select(Date, Team, opp_form_last_5 = form_last_5),
+            by = c("Date", "Opponent" = "Team"))
+#####################################################
+# Streak
+# fixture_2025 <- fixture_2025 %>%
+#   arrange(Team, Date) %>%
+#   group_by(Team) %>%
+#   mutate(
+#     rleid_id = data.table::rleid(Result_Binary),  # run-length ID
+#     win_streak = ifelse(Result_Binary == 1, ave(Result_Binary, rleid_id, FUN = seq_along), 0),
+#     lose_streak = ifelse(Result_Binary == 0, ave(Result_Binary, rleid_id, FUN = seq_along), 0)
+#   ) %>%
+#   ungroup()
+#####################################################
 # Logit
 fixture_2025 <- fixture_2025 %>%
   mutate(
@@ -747,7 +845,10 @@ predict_data <- fixture_2025 %>%
     
     # Team quality indicators
     is_premiership_coach,
-    form_last_5
+    form_last_5,
+    rest_days,
+    is_short_turnaround,
+    opp_form_last_5
   )
 
 
