@@ -160,12 +160,6 @@ weather_flags_long <- weather_flags %>%
 results <- results %>%
   left_join(weather_flags_long, by = c("Date", "Team")) %>%
   mutate(is_wet_weather = replace_na(is_wet_weather, 0))
-
-#####################################################
-# is_final
-#results <- results %>% mutate(
-  #is_final = ifelse(Round > 24, 1,0) # Some seasons have less than 24 rounds some are characters too
-#)
 #####################################################
 # Team stats
 stats <- fetch_player_stats_afltables(2003:2025)
@@ -327,23 +321,6 @@ results <- results %>%
   ) %>%
   ungroup()
 #####################################################
-# Opponent form
-results <- results %>%
-  left_join(results %>%
-              select(Date, Team, opp_form_last_5 = form_last_5),
-            by = c("Date", "Opponent" = "Team"))
-#####################################################
-# Streak
-# results <- results %>%
-#   arrange(Team, Date) %>%
-#   group_by(Team) %>%
-#   mutate(
-#     rleid_id = data.table::rleid(Result_Binary),  # run-length ID
-#     win_streak = ifelse(Result_Binary == 1, ave(Result_Binary, rleid_id, FUN = seq_along), 0),
-#     lose_streak = ifelse(Result_Binary == 0, ave(Result_Binary, rleid_id, FUN = seq_along), 0)
-#   ) %>%
-#   ungroup()
-#####################################################
 # Logisitc Regression
 logit_model <- glm(
   Result_Binary ~ 
@@ -362,7 +339,7 @@ logit_model <- glm(
     form_last_5 +
     
     # New features
-    rest_days + is_short_turnaround + opp_form_last_5,
+    rest_days + is_short_turnaround,
   
   family = binomial,
   data = results
@@ -404,7 +381,7 @@ spread_lm <- lm(
     # Team quality indicators
     is_premiership_coach +
     avg_Career_Games + roll3_Career_Games +
-    form_last_5 + rest_days + is_short_turnaround + opp_form_last_5,
+    form_last_5 + rest_days + is_short_turnaround,
   data = results
 )
 summary(spread_lm)
@@ -440,7 +417,7 @@ poisson_model <- glm(
     avg_Goal.Assists + roll3_Goal.Assists +
     avg_Clearances + roll3_Clearances +
     is_premiership_coach +
-    form_last_5 + rest_days + is_short_turnaround + opp_form_last_5,
+    form_last_5 + rest_days + is_short_turnaround,
   family = poisson(link = "log"),
   data = results
 )
@@ -466,8 +443,12 @@ poisson_accuracy_by_season <- results %>%
   arrange(desc(Season)) 
 
 poisson_accuracy_by_season
+
+poisson_data <- results %>% filter(Season == 2025) %>% select(
+  Date, Round, Game_Id, Team, Opponent, Poisson_Pred_Points, Poisson_Pred_Margin, Poisson_Pred_Result, Poisson_Correct
+) %>% arrange(Date, Round, Game_Id)
 #####################################################
-# XG Boost - this has the issue where both teams are predicted to lose
+# XG Boost
 
 xgb_data <- results %>%
   filter(!is.na(Result_Binary)) %>%
@@ -493,8 +474,7 @@ xgb_data <- results %>%
     is_premiership_coach,
     form_last_5,
     rest_days,
-    is_short_turnaround,
-    opp_form_last_5
+    is_short_turnaround
   )
 
 
@@ -549,8 +529,7 @@ results$XGB_Win_Prob <- predict(
     is_premiership_coach,
     form_last_5,
     rest_days,
-    is_short_turnaround,
-    opp_form_last_5
+    is_short_turnaround
   ))
 )
 
@@ -632,6 +611,20 @@ ladder_poisson <- results %>%
   arrange(desc(Poisson_Points), desc(Poisson_Percentage)) %>%
   mutate(Rank_Poisson = row_number())
 
+poisson_data <- results %>%
+  select(
+    Season,
+    Round,
+    Date,
+    Team,
+    Opponent,
+    Home,
+    Points_For,
+    Points_Against,
+    Poisson_Pred_Points,
+    Poisson_Pred_Margin,
+    Poisson_Pred_Result,
+    Result_Binary) %>% filter(Season == 2025) %>% arrange(Date, Round, Team)
 
 # Linear Margin
 ladder_linear <- results %>%
@@ -668,7 +661,6 @@ rank_diff_summary <- ladder_comparison %>%
   )
 
 rank_diff_summary
-result_2025 <- results %>% filter(Season == 2025, Round == 8)
 #####################################################
 # 2025 Future Predictions
 fixture_2025 <- fetch_fixture_footywire(2025)
@@ -698,107 +690,8 @@ fixture_away <- fixture_2025 %>%
 
 fixture_long <- bind_rows(fixture_home, fixture_away) %>%
   arrange(Date, Season, Round, Game_Id)
-
-fixture_2025 <- fixture_long %>% left_join(
-  teams_elo %>% select(Team, ELO), by = c('Team' = 'Team'))
-
-fixture_2025 <- fixture_2025 %>% left_join(
-  teams_elo %>% select(Team, ELO), by = c('Opponent' = 'Team'))
-
-names(fixture_2025) <- c("Date", "Season", "Game_Id", "Round", "Team", "Opponent", "Venue", "Home", "ELO", "Opp_ELO")
-
-fixture_2025 <- fixture_2025 %>%
-  mutate(Elo_Difference = ELO - Opp_ELO)
 #####################################################
-# Adding features into the 2025 dataset
-results_2025 <- results %>%
-  filter(Season == 2025) %>%
-  mutate(
-    Team = ifelse(Team == "Brisbane", "Brisbane Lions", Team),
-    Opponent = ifelse(Opponent == "Brisbane", "Brisbane Lions", Opponent)
-  )
 
-latest_stats <- results_2025 %>%
-  group_by(Team) %>%
-  filter(Round == max(Round)) %>%
-  ungroup() %>%
-  select(Game_Id, Team, starts_with("avg_"), starts_with("roll3_"), Coach, is_premiership_coach)
-
-fixture_2025 <- fixture_2025 %>%
-  left_join(
-    results_2025 %>%
-      select(Game_Id, Team, starts_with("avg_"), starts_with("roll3_"), Coach, is_premiership_coach),
-    by = c("Game_Id", "Team")
-  )
-
-# So for future rounds its full of NA, so we need to make models to predict team stats too? Basically simulate a whole game?
-#####################################################
-# Adding Form - first we need to add results of games that have taken place
-winners <- fetch_results_footywire(2025)
-colnames(winners)
-
-results_long <- winners %>%
-  select(Date, Round, Venue, Home.Team, Away.Team, Home.Points, Away.Points) %>%
-  pivot_longer(cols = c(Home.Team, Away.Team), names_to = "HomeAway", values_to = "Team") %>%
-  mutate(
-    Points = ifelse(HomeAway == "Home.Team", Home.Points, Away.Points),
-    OpponentPoints = ifelse(HomeAway == "Home.Team", Away.Points, Home.Points),
-    Result_Binary = ifelse(Points > OpponentPoints, 1, 0)
-  ) %>%
-  select(Date, Team, Result_Binary) %>% 
-  mutate(
-    Team = ifelse(Team == "Western Bulldogs", "Footscray", Team),
-    Team = ifelse(Team == "Brisbane", "Brisbane Lions", Team)
-  )
-
-fixture_2025 <- fixture_2025 %>%
-  left_join(results_long %>% select(Date, Team, Result_Binary),
-            by = c("Date", "Team"))
-
-fixture_2025 <- fixture_2025 %>%
-  arrange(Team, Date) %>%
-  group_by(Team) %>%
-  mutate(
-    form_last_5 = coalesce(lag(slide_dbl(Result_Binary, ~mean(.x, na.rm = TRUE), .before = 4, .complete = TRUE)), 0)
-  ) %>%
-  ungroup() %>% 
-  arrange(Date, Season, Round)
-#####################################################
-# Time between previous game
-fixture_2025 <- fixture_2025 %>%
-  arrange(Team, Date) %>%
-  group_by(Team) %>%
-  mutate(
-    rest_days = as.numeric(Date - lag(Date)),
-    rest_days = replace_na(rest_days, 0),            
-    rest_days = pmin(rest_days, 14),                 # Cap it
-    is_short_turnaround = ifelse(rest_days < 6, 1, 0)
-  ) %>%
-  ungroup()
-#####################################################
-# Opponent form
-fixture_2025 <- fixture_2025 %>%
-  left_join(results %>%
-              select(Date, Team, opp_form_last_5 = form_last_5),
-            by = c("Date", "Opponent" = "Team"))
-#####################################################
-# Streak
-# fixture_2025 <- fixture_2025 %>%
-#   arrange(Team, Date) %>%
-#   group_by(Team) %>%
-#   mutate(
-#     rleid_id = data.table::rleid(Result_Binary),  # run-length ID
-#     win_streak = ifelse(Result_Binary == 1, ave(Result_Binary, rleid_id, FUN = seq_along), 0),
-#     lose_streak = ifelse(Result_Binary == 0, ave(Result_Binary, rleid_id, FUN = seq_along), 0)
-#   ) %>%
-#   ungroup()
-#####################################################
-# Logit
-fixture_2025 <- fixture_2025 %>%
-  mutate(
-    Logit_Prob = predict(logit_model, newdata = fixture_2025, type = "response"),
-    Logit_Forecast = ifelse(Logit_Prob > 0.5, 1, 0)
-  )
 #####################################################
 # Linear
 fixture_2025 <- fixture_2025 %>%
@@ -847,8 +740,7 @@ predict_data <- fixture_2025 %>%
     is_premiership_coach,
     form_last_5,
     rest_days,
-    is_short_turnaround,
-    opp_form_last_5
+    is_short_turnaround
   )
 
 
