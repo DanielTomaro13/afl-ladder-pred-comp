@@ -375,10 +375,17 @@ summary(logit_model)
 
 results <- results %>%
   mutate(
-    Logit_Prob = predict(logit_model, newdata = results, type = "response"),
-    Logit_Forecast = ifelse(Logit_Prob > 0.5, 1, 0),
+    Logit_Prob = predict(logit_model, newdata = results, type = "response")
+  ) %>%
+  group_by(Game_Id) %>%
+  mutate(
+    Sum_Prob = sum(Logit_Prob),
+    Logit_Prob_Adj = Logit_Prob / Sum_Prob,  # Force probabilities to sum to 1
+    Logit_Forecast = ifelse(Logit_Prob_Adj > 0.5, 1, 0),
     Logit_Correct = ifelse(Logit_Forecast == Result_Binary, 1, 0)
-  )
+  ) %>%
+  ungroup()
+
 
 logit_accuracy_by_season <- results %>%
   filter(!is.na(Logit_Correct)) %>%
@@ -415,10 +422,17 @@ summary(spread_lm)
 results <- results %>%
   mutate(
     Margin = Points_For - Points_Against,
-    Margin_Pred = predict(spread_lm, newdata = results),
+    Margin_Pred = predict(spread_lm, newdata = results)
+  ) %>%
+  group_by(Game_Id) %>%
+  mutate(
+    Avg_Margin_Pred = mean(Margin_Pred),   # Force Margin_Pred same for both teams
+    Margin_Pred = Avg_Margin_Pred,
     Margin_Pred_Result = ifelse(Margin_Pred > 0, 1, 0),
     Margin_Correct = ifelse(Margin_Pred_Result == Result_Binary, 1, 0)
-  )
+  ) %>%
+  ungroup()
+
 
 season_accuracy_mae <- results %>%
   group_by(Season) %>%
@@ -463,10 +477,17 @@ poisson_data_clean <- results %>%
 poisson_results <- poisson_data_clean %>%
   mutate(
     Poisson_Pred_Points = predict(poisson_model, newdata = ., type = "response"),
-    Poisson_Pred_Margin = Poisson_Pred_Points - Points_Against,
+    Poisson_Pred_Margin = Poisson_Pred_Points - Points_Against
+  ) %>%
+  group_by(Game_Id) %>%
+  mutate(
+    Avg_Poisson_Pred_Margin = mean(Poisson_Pred_Margin),  # Make margin same within a game
+    Poisson_Pred_Margin = Avg_Poisson_Pred_Margin,
     Poisson_Pred_Result = ifelse(Poisson_Pred_Margin > 0, 1, 0),
     Poisson_Correct = ifelse(Poisson_Pred_Result == Result_Binary, 1, 0)
-  )
+  ) %>%
+  ungroup()
+
 
 poisson_accuracy_by_season <- poisson_results %>%
   group_by(Season) %>%
@@ -564,8 +585,15 @@ results$XGB_Win_Prob <- predict(
   ))
 )
 
-results$XGB_Forecast <- ifelse(results$XGB_Win_Prob > 0.5, 1, 0)
-results$XGB_Correct <- ifelse(results$XGB_Forecast == results$Result_Binary, 1, 0)
+results <- results %>%
+  group_by(Game_Id) %>%
+  mutate(
+    Sum_XGB_Win_Prob = sum(XGB_Win_Prob),
+    XGB_Win_Prob_Adj = XGB_Win_Prob / Sum_XGB_Win_Prob,  # Normalize to sum to 1
+    XGB_Forecast = ifelse(XGB_Win_Prob_Adj > 0.5, 1, 0),
+    XGB_Correct = ifelse(XGB_Forecast == Result_Binary, 1, 0)
+  ) %>%
+  ungroup()
 
 xgb_accuracy <- results %>%
   group_by(Season) %>%
@@ -763,18 +791,33 @@ fixture_2025_long <- fixture_2025_long %>%
   )
 
 #####################################################
+# LOGIT
 fixture_2025_long <- fixture_2025_long %>%
   mutate(
-    Logit_Prob = predict(logit_model, newdata = ., type = "response"),
-    Logit_Forecast = ifelse(Logit_Prob > 0.5, 1, 0)
-  )
+    Logit_Prob = predict(logit_model, newdata = ., type = "response")
+  ) %>%
+  group_by(Game_Id) %>%
+  mutate(
+    Sum_Logit_Prob = sum(Logit_Prob),
+    Logit_Prob_Adj = Logit_Prob / Sum_Logit_Prob,
+    Logit_Forecast = ifelse(Logit_Prob_Adj > 0.5, 1, 0)
+  ) %>%
+  ungroup()
 
+# SPREAD (Linear Model)
 fixture_2025_long <- fixture_2025_long %>%
   mutate(
-    Margin_Pred = predict(spread_lm, newdata = .),
+    Margin_Pred = predict(spread_lm, newdata = .)
+  ) %>%
+  group_by(Game_Id) %>%
+  mutate(
+    Avg_Margin_Pred = mean(Margin_Pred),
+    Margin_Pred = Avg_Margin_Pred,
     Margin_Pred_Result = ifelse(Margin_Pred > 0, 1, 0)
-  )
+  ) %>%
+  ungroup()
 
+# POISSON (Predicted Points & Margin)
 fixture_2025_long <- fixture_2025_long %>%
   mutate(
     Poisson_Pred_Points = predict(poisson_model, newdata = ., type = "response")
@@ -787,10 +830,17 @@ opponent_pred_points <- fixture_2025_long %>%
 fixture_2025_long <- fixture_2025_long %>%
   left_join(opponent_pred_points, by = c("Game_Id", "Team" = "Opponent")) %>%
   mutate(
-    Poisson_Pred_Margin = Poisson_Pred_Points - Opponent_Pred_Points,
+    Poisson_Pred_Margin = Poisson_Pred_Points - Opponent_Pred_Points
+  ) %>%
+  group_by(Game_Id) %>%
+  mutate(
+    Avg_Poisson_Pred_Margin = mean(Poisson_Pred_Margin),
+    Poisson_Pred_Margin = Avg_Poisson_Pred_Margin,
     Poisson_Pred_Result = ifelse(Poisson_Pred_Margin > 0, 1, 0)
-  )
+  ) %>%
+  ungroup()
 
+# XGBOOST
 fixture_2025_long <- fixture_2025_long %>%
   mutate(
     XGB_Win_Prob = predict(xgb_model, as.matrix(select(., 
@@ -800,15 +850,23 @@ fixture_2025_long <- fixture_2025_long %>%
                                                        roll3_Inside.50s, roll3_Clearances, roll3_Contested.Possessions,
                                                        roll3_Marks.Inside.50, roll3_Goal.Assists, roll3_Career_Games,
                                                        is_premiership_coach, form_last_5, rest_days, is_short_turnaround
-    ))),
-    XGB_Forecast = ifelse(XGB_Win_Prob > 0.5, 1, 0)
-  )
+    )))
+  ) %>%
+  group_by(Game_Id) %>%
+  mutate(
+    Sum_XGB_Win_Prob = sum(XGB_Win_Prob),
+    XGB_Win_Prob_Adj = XGB_Win_Prob / Sum_XGB_Win_Prob,
+    XGB_Forecast = ifelse(XGB_Win_Prob_Adj > 0.5, 1, 0)
+  ) %>%
+  ungroup()
 
-xgb_predictions <- fixture_2025_long %>% select(
-  Date, Game_Id, Round, Team, Opponent, XGB_Win_Prob, XGB_Forecast
-) %>% arrange(
-  Date, Game_Id, Round,
-)
+# Final predictions output
+xgb_predictions <- fixture_2025_long %>%
+  select(
+    Date, Game_Id, Round, Team, Opponent, 
+    XGB_Win_Prob_Adj, XGB_Forecast
+  ) %>%
+  arrange(Date, Game_Id, Round)
 #####################################################
 # Logistic Ladder
 ladder_2025_logit <- fixture_2025_long %>%
