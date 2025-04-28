@@ -476,7 +476,7 @@ recent_team_stats <- results %>%
   slice_max(Date, n = 1, with_ties = FALSE) %>%
   select(
     Team,
-    Elo_Difference,
+    ELO,
     roll3_Kicks, roll3_Goals, roll3_Behinds,
     roll3_Inside.50s, roll3_Clearances,
     roll3_Brownlow.Votes, roll3_Goal.Assists,
@@ -488,8 +488,19 @@ recent_team_stats <- results %>%
     roll3_Rebounds
   )
 
+
 fixture_2025_long <- fixture_2025_long %>%
-  left_join(recent_team_stats, by = "Team")
+  left_join(recent_team_stats, by = "Team") %>%
+  
+  left_join(
+    recent_team_stats %>%
+      select(Team, Opponent_ELO = ELO),
+    by = c("Opponent" = "Team")
+  ) %>%
+  
+  mutate(
+    Elo_Difference = ELO - Opponent_ELO
+  )
 #####################################################
 fixture_2025_long <- fixture_2025_long %>%
   mutate(
