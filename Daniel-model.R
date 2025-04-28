@@ -431,6 +431,10 @@ rank_diff_summary <- ladder_comparison %>%
   )
 
 rank_diff_summary
+
+ranks <- ladder_comparison %>% select(Team, Rank_Actual, Rank_Poisson) %>% mutate(
+  rank_diff = Rank_Actual - Rank_Poisson
+)
 #####################################################
 # 2025 Future Predictions
 fixture_2025 <- fetch_fixture_footywire(2025)
