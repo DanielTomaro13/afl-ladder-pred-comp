@@ -746,7 +746,7 @@ fixture_away <- fixture_2025 %>%
 
 #####################################################
 fixture_2025_long <- bind_rows(fixture_home, fixture_away) %>% 
-  arrange(Date, Season, Round, Game_Id) %>% filter(Round >= 8)
+  arrange(Date, Season, Round, Game_Id)
 
 fixture_2025_long <- fixture_2025_long %>%
   mutate(
@@ -756,8 +756,8 @@ fixture_2025_long <- fixture_2025_long %>%
     Opponent = ifelse(Opponent == "GWS", "Greater Western Sydney", Opponent)
   )
 #####################################################
-round_7_stats <- results %>%
-  filter(Season == 2025, Round == 7) %>%
+round_stats <- results %>%
+  filter(Season == 2025, Round >= 7) %>%
   select(
     Team,
     Elo_Difference,
@@ -770,7 +770,7 @@ round_7_stats <- results %>%
   )
 
 fixture_2025_long <- fixture_2025_long %>%
-  left_join(round_7_stats, by = "Team")
+  left_join(round_stats, by = "Team") %>% filter(Round >= 8)
 
 fixture_2025_long <- fixture_2025_long %>%
   mutate(
@@ -783,31 +783,11 @@ fixture_2025_long <- fixture_2025_long %>%
         roll3_Marks.Inside.50, roll3_Goal.Assists, roll3_Career_Games,
         form_last_5, rest_days, is_short_turnaround
       ),
-      ~ ifelse(Round > 8, 0, .x)  # Only keep Round 8 values, blank after
+      ~ ifelse(Round > 8, 0, .x)  
     )
   )
 
 #####################################################
-# POISSON (Predicted Points & Margin) - Doesnt Work
-fixture_2025_long <- fixture_2025_long %>%
-  mutate(
-    Poisson_Pred_Points = predict(poisson_model, newdata = .)
-  )
-
-opponent_pred_points <- fixture_2025_long %>%
-  select(Game_Id, Team, Opponent, Poisson_Pred_Points) %>%
-  rename(
-    Opponent = Team,                   # Now 'Opponent' becomes 'Team'
-    Opponent_Pred_Points = Poisson_Pred_Points
-  )
-
-fixture_2025_long <- fixture_2025_long %>%
-  left_join(opponent_pred_points, by = c("Game_Id", "Team" = "Opponent")) %>%
-  mutate(
-    Poisson_Pred_Margin = Poisson_Pred_Points - Opponent_Pred_Points,
-    Poisson_Pred_Result = ifelse(Poisson_Pred_Margin > 0, 1, 0)
-  )
-
 # XGBOOST
 fixture_2025_long <- fixture_2025_long %>%
   mutate(
