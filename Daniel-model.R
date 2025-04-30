@@ -9,6 +9,7 @@ library(xgboost)
 library(Matrix)
 library(elo)
 library(data.table)
+library(purrr)
 #####################################################
 results <- fetch_results_afltables(2003:2025)
 colnames(results)
@@ -28,7 +29,9 @@ restructure_afl_data <- function(afl_data) {
     Home = TRUE,
     Game_ID = afl_data$Game,
     ELO = NA,
-    Opp_ELO = NA
+    Opp_ELO = NA,
+    Home.team = afl_data$Home.Team,
+    Away.team = afl_data$Away.Team
   )
   afl_away <- data.frame(
     Date = afl_data$Date,
@@ -45,7 +48,9 @@ restructure_afl_data <- function(afl_data) {
     Home = FALSE,
     Game_ID = afl_data$Game,
     ELO = NA,
-    Opp_ELO = NA
+    Opp_ELO = NA,
+    Home.team = afl_data$Home.Team,
+    Away.team = afl_data$Away.Team
   )
   return(bind_rows(afl_home, afl_away))
 }
@@ -123,7 +128,7 @@ colnames(results)
 
 results <- results %>% select(
   Date, Season, Round, Game_Id, Game_ID, Team, Opponent, Points_For, Points_Against, Result_Binary, Spread, Home, ELO, Opp_ELO,
-  Elo_Difference
+  Elo_Difference, Home.team, Away.team
 )
 #####################################################
 # Add form
@@ -132,6 +137,31 @@ results <- results %>%
   group_by(Team) %>%
   mutate(
     form_last_5 = coalesce(lag(slide_dbl(Result_Binary, ~mean(.x, na.rm = TRUE), .before = 4, .complete = TRUE)), 0)
+  ) %>%
+  ungroup()
+# avg margin and std margin
+results <- results %>%
+  arrange(Team, Date) %>%
+  group_by(Team) %>%
+  mutate(
+    avg_margin_last_5 = slide_dbl(Spread, mean, .before = 4, .complete = TRUE),
+    std_margin_last_5 = slide_dbl(Spread, sd, .before = 4, .complete = TRUE)
+  ) %>%
+  ungroup()
+# win streak
+results <- results %>%
+  arrange(Team, Date) %>%
+  group_by(Team) %>%
+  mutate(
+    win_streak = accumulate(lag(Result_Binary), ~ ifelse(.y == 1, .x + 1, 0), .init = 0)[-1]
+  ) %>%
+  ungroup()
+#opponent strength
+results <- results %>%
+  arrange(Team, Date) %>%
+  group_by(Team) %>%
+  mutate(
+    recent_opponent_strength = slide_dbl(Opp_ELO, mean, .before = 2, .complete = TRUE)
   ) %>%
   ungroup()
 #####################################################
@@ -222,66 +252,71 @@ team_avg_stats <- stats %>%
   arrange(Team, Date) %>%
   group_by(Team) %>%
   mutate(
-    avg_Kicks = lag(cummean(Kicks)),
-    avg_Marks = lag(cummean(Marks)),
-    avg_Handballs = lag(cummean(Handballs)),
-    avg_Disposals = lag(cummean(Disposals)),
-    avg_Goals = lag(cummean(Goals)),
-    avg_Behinds = lag(cummean(Behinds)),
-    avg_Tackles = lag(cummean(Tackles)),
-    avg_Rebounds = lag(cummean(Rebounds)),
-    avg_Inside.50s = lag(cummean(Inside.50s)),
-    avg_Clearances = lag(cummean(Clearances)),
-    avg_Clangers = lag(cummean(Clangers)),
-    avg_Brownlow.Votes = lag(cummean(Brownlow.Votes)),
-    avg_Contested.Possessions = lag(cummean(Contested.Possessions)),
-    avg_Uncontested.Possessions = lag(cummean(Uncontested.Possessions)),
-    avg_Contested.Marks = lag(cummean(Contested.Marks)),
-    avg_Marks.Inside.50 = lag(cummean(Marks.Inside.50)),
-    avg_One.Percenters = lag(cummean(One.Percenters)),
-    avg_Goal.Assists = lag(cummean(Goal.Assists)),
-    avg_Time.on.Ground = lag(cummean(Time.on.Ground)),
-    avg_Age = lag(cummean(Age)),
-    avg_Career_Games = lag(cummean(Career.Games)),
+    across(c(
+      Kicks, Marks, Handballs, Disposals, Goals, Behinds, Tackles, Rebounds,
+      Inside.50s, Clearances, Clangers, Brownlow.Votes, Contested.Possessions,
+      Uncontested.Possessions, Contested.Marks, Marks.Inside.50, One.Percenters,
+      Goal.Assists, Time.on.Ground, Age, Career.Games
+    ), ~lag(cummean(.x)), .names = "avg_{.col}"),
     
-    roll3_Kicks = lag(slide_dbl(Kicks, mean, .before = 2, .complete = TRUE)),
-    roll3_Marks = lag(slide_dbl(Marks, mean, .before = 2, .complete = TRUE)),
-    roll3_Handballs = lag(slide_dbl(Handballs, mean, .before = 2, .complete = TRUE)),
-    roll3_Disposals = lag(slide_dbl(Disposals, mean, .before = 2, .complete = TRUE)),
-    roll3_Goals = lag(slide_dbl(Goals, mean, .before = 2, .complete = TRUE)),
-    roll3_Behinds = lag(slide_dbl(Behinds, mean, .before = 2, .complete = TRUE)),
-    roll3_Tackles = lag(slide_dbl(Tackles, mean, .before = 2, .complete = TRUE)),
-    roll3_Rebounds = lag(slide_dbl(Rebounds, mean, .before = 2, .complete = TRUE)),
-    roll3_Inside.50s = lag(slide_dbl(Inside.50s, mean, .before = 2, .complete = TRUE)),
-    roll3_Clearances = lag(slide_dbl(Clearances, mean, .before = 2, .complete = TRUE)),
-    roll3_Clangers = lag(slide_dbl(Clangers, mean, .before = 2, .complete = TRUE)),
-    roll3_Brownlow.Votes = lag(slide_dbl(Brownlow.Votes, mean, .before = 2, .complete = TRUE)),
-    roll3_Contested.Possessions = lag(slide_dbl(Contested.Possessions, mean, .before = 2, .complete = TRUE)),
-    roll3_Uncontested.Possessions = lag(slide_dbl(Uncontested.Possessions, mean, .before = 2, .complete = TRUE)),
-    roll3_Contested.Marks = lag(slide_dbl(Contested.Marks, mean, .before = 2, .complete = TRUE)),
-    roll3_Marks.Inside.50 = lag(slide_dbl(Marks.Inside.50, mean, .before = 2, .complete = TRUE)),
-    roll3_One.Percenters = lag(slide_dbl(One.Percenters, mean, .before = 2, .complete = TRUE)),
-    roll3_Goal.Assists = lag(slide_dbl(Goal.Assists, mean, .before = 2, .complete = TRUE)),
-    roll3_Time.on.Ground = lag(slide_dbl(Time.on.Ground, mean, .before = 2, .complete = TRUE)),
-    roll3_Age = lag(slide_dbl(Age, mean, .before = 2, .complete = TRUE)),
-    roll3_Career_Games = lag(slide_dbl(Career.Games, mean, .before = 2, .complete = TRUE))
+    across(c(
+      Kicks, Marks, Handballs, Disposals, Goals, Behinds, Tackles, Rebounds,
+      Inside.50s, Clearances, Clangers, Brownlow.Votes, Contested.Possessions,
+      Uncontested.Possessions, Contested.Marks, Marks.Inside.50, One.Percenters,
+      Goal.Assists, Time.on.Ground, Age, Career.Games
+    ), ~lag(slide_dbl(.x, mean, .before = 2, .complete = TRUE)), .names = "roll3_{.col}")
   ) %>%
   ungroup() %>%
-  group_by(Date, Season, Round, Game_Id, Team) %>%
+  group_by(Date, Season, Round, Game_Id, Team, Home.team, Away.team) %>%
   summarise(
     across(starts_with("avg_"), sum, na.rm = FALSE),
     across(starts_with("roll3_"), sum, na.rm = FALSE),
     .groups = "drop"
   )
 
+home_stats <- team_avg_stats %>%
+  filter(Team == Home.team) %>%
+  rename_with(~paste0("home_", .), starts_with("avg_")) %>%
+  rename_with(~paste0("home_", .), starts_with("roll3_")) %>%
+  rename(Home.Team = Team)
+
+away_stats <- team_avg_stats %>%
+  filter(Team == Away.team) %>%
+  rename_with(~paste0("away_", .), starts_with("avg_")) %>%
+  rename_with(~paste0("away_", .), starts_with("roll3_")) %>%
+  rename(Away.Team = Team)
+
+joined_stats <- home_stats %>%
+  inner_join(away_stats, by = c("Game_Id", "Date", "Season", "Round", "Home.team", "Away.team"))
+
+diff_stats <- joined_stats %>%
+  mutate(
+    across(starts_with("home_avg_"), 
+           ~ . - get(gsub("^home_", "away_", cur_column())),
+           .names = "{.col}_diff"),
+    
+    across(starts_with("home_roll3_"), 
+           ~ . - get(gsub("^home_", "away_", cur_column())),
+           .names = "{.col}_diff")
+  )
+
+final_diff_stats <- diff_stats %>%
+  select(Game_Id, Date, Round, Home.Team, Away.Team, ends_with("_diff"))
+
 colSums(is.na(team_avg_stats))
 
 results <- results %>%
-  mutate(Round = as.character(Round)) %>%
+  mutate(
+    Round = as.character(Round),
+    Home.team = as.character(Home.team),
+    Away.team = as.character(Away.team)
+  ) %>%
   left_join(
-    team_avg_stats %>% select(Date, Season, Round, Game_Id, Team, starts_with("avg_"), starts_with("roll3_")),
-    by = c("Date", "Season", "Round", "Game_Id", "Team")
-  ) %>% arrange(Date, Season, Round, Game_Id)
+    diff_stats,
+    by = c("Game_Id", "Date", "Season", "Round", "Home.team", "Away.team")
+  ) %>%
+  arrange(Date, Season, Round, Game_Id)
+
 
 colnames(results)
 colSums(is.na(results))
@@ -333,30 +368,53 @@ results <- results %>%
 #####################################################
 results <- na.omit(results)
 
-train_data <- results %>% filter(Season >= 2003, Season <= 2024)
-test_data <- results %>% filter(Season == 2025)
+train_data_subset <- results %>%
+  filter(Season >= 2003, Season <= 2024) %>%
+  arrange(Game_Id) %>%
+  select(
+    Points_For,                             # Target
+    matches("^(is_|Home|rest_days|is_short_turnaround|is_wet_weather)$"),
+    ELO, Opp_ELO,
+    
+    # Form-related features
+    form_last_5,
+    avg_margin_last_5,
+    std_margin_last_5,
+    win_streak,
+    recent_opponent_strength,
+    
+    ends_with("_diff")                     # Engineered stat differentials
+  ) %>%
+  select(-home_avg_Disposals_diff, -home_roll3_Disposals_diff)  # Remove collinear/low value
+
+
+test_data <- results %>%
+  filter(Season == 2025) %>%
+  arrange(Game_Id) %>%
+  select(
+    Date, Season, Round, Game_Id, Team, Opponent,        # Metadata (keep for now)
+    Points_For,                                           # Target
+    matches("^(is_|Home|Result_Binary|rest_days|is_short_turnaround|is_wet_weather)$"),
+    ELO, Opp_ELO,
+    
+    # Form features
+    form_last_5,
+    avg_margin_last_5,
+    std_margin_last_5,
+    win_streak,
+    recent_opponent_strength,
+    
+    ends_with("_diff")
+  ) %>%
+  select(-home_avg_Disposals_diff, -home_roll3_Disposals_diff)
 
 poisson_model_train <- glm(
-  Points_For ~ 
-    Elo_Difference + 
-    Home +
-    roll3_Kicks + 
-    roll3_Goals +
-    roll3_Behinds +
-    roll3_Inside.50s +
-    roll3_Clearances +
-    roll3_Brownlow.Votes +
-    roll3_Goal.Assists +
-    roll3_Time.on.Ground +
-    is_short_turnaround +
-    rest_days +
-    form_last_5 +
-    avg_Contested.Marks +
-    roll3_Marks +
-    roll3_Rebounds,
+  Points_For ~ .,
   family = poisson(link = "log"),
-  data = train_data
+  data = train_data_subset
 )
+
+summary(poisson_model_train)
 
 test_data <- test_data %>%
   mutate(
@@ -384,7 +442,7 @@ poisson_accuracy_2025 <- test_data %>%
 poisson_accuracy_2025
 
 poisson_data <- test_data %>% select(
-  Round, Game_Id, Team, Opponent, Poisson_Pred_Points, Poisson_Pred_Margin, Poisson_Pred_Result
+  Round, Game_Id, Team, Opponent, Poisson_Pred_Points, Poisson_Pred_Margin, Poisson_Pred_Result, Result_Binary
 ) %>% arrange(Game_Id)
 #####################################################
 # Actual Ladder
@@ -477,37 +535,39 @@ fixture_2025_long <- fixture_2025_long %>%
 #####################################################
 recent_team_stats <- results %>%
   filter(Season == 2025, Round < 9) %>%
+  arrange(Team, Date) %>%
   group_by(Team) %>%
+  mutate(
+    form_last_5 = slide_dbl(Result_Binary, mean, .before = 4, .complete = TRUE),
+    avg_margin_last_5 = slide_dbl(Spread, mean, .before = 4, .complete = TRUE),
+    std_margin_last_5 = slide_dbl(Spread, sd, .before = 4, .complete = TRUE),
+    win_streak = accumulate(Result_Binary, ~ ifelse(.y == 1, .x + 1, 0), .init = 0)[-1],
+    recent_opponent_strength = slide_dbl(Opp_ELO, mean, .before = 2, .complete = TRUE)
+  ) %>%
   slice_max(Date, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
   select(
     Team,
     ELO,
-    roll3_Kicks, roll3_Goals, roll3_Behinds,
-    roll3_Inside.50s, roll3_Clearances,
-    roll3_Brownlow.Votes, roll3_Goal.Assists,
-    roll3_Time.on.Ground,
-    is_short_turnaround, rest_days,
-    form_last_5,
-    avg_Contested.Marks,
-    roll3_Marks,
-    roll3_Rebounds
+    is_short_turnaround, is_wet_weather, Home, Result_Binary, rest_days,
+    form_last_5, avg_margin_last_5, std_margin_last_5, win_streak, recent_opponent_strength,
+    matches("_diff$")
   )
 
 
 fixture_2025_long <- fixture_2025_long %>%
   left_join(recent_team_stats, by = "Team") %>%
-  
   left_join(
     recent_team_stats %>%
-      select(Team, Opponent_ELO = ELO),
+      select(Team, Opp_ELO = ELO),
     by = c("Opponent" = "Team")
   ) %>%
-  
   mutate(
-    Elo_Difference = ELO - Opponent_ELO
+    Elo_Difference = ELO - Opp_ELO
   )
+
 #####################################################
-fixture_2025_long <- fixture_2025_long %>%
+fixture_2025_long <- fixture_2025_long %>% mutate(Home = Home.x) %>% 
   mutate(
     Poisson_Pred_Points = predict(poisson_model_train, newdata = ., type = "response")
   )
@@ -533,3 +593,4 @@ fixture_2025_predictions <- fixture_2025_long %>%
   ) %>%
   arrange(Date)
 #####################################################
+carlton <- test_data %>% filter(Team == "Carlton") %>% arrange(Game_Id)
