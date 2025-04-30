@@ -269,10 +269,11 @@ team_avg_stats <- stats %>%
   ungroup() %>%
   group_by(Date, Season, Round, Game_Id, Team) %>%
   summarise(
-    across(starts_with("avg_"), mean, na.rm = FALSE),
-    across(starts_with("roll3_"), mean, na.rm = FALSE),
+    across(starts_with("avg_"), sum, na.rm = FALSE),
+    across(starts_with("roll3_"), sum, na.rm = FALSE),
     .groups = "drop"
   )
+
 colSums(is.na(team_avg_stats))
 
 results <- results %>%
@@ -464,7 +465,7 @@ fixture_away <- fixture_2025 %>%
 
 #####################################################
 fixture_2025_long <- bind_rows(fixture_home, fixture_away) %>% 
-  arrange(Date, Season, Round, Game_Id) %>% filter(Round >= 8)
+  arrange(Date, Season, Round, Game_Id) %>% filter(Round >= 9)
 
 fixture_2025_long <- fixture_2025_long %>%
   mutate(
@@ -475,7 +476,7 @@ fixture_2025_long <- fixture_2025_long %>%
   )
 #####################################################
 recent_team_stats <- results %>%
-  filter(Season == 2025, Round < 8) %>%
+  filter(Season == 2025, Round < 9) %>%
   group_by(Team) %>%
   slice_max(Date, n = 1, with_ties = FALSE) %>%
   select(
